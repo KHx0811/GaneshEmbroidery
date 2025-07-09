@@ -68,14 +68,20 @@ app.get('/favicon.ico', (req, res) => {
 
 app.use("/", routes);
 
+// Start server with database connection
+const startServer = async () => {
+    try {
+        await ConnectToDB();
+        app.listen(port, () => {
+            console.log(`Server is running on port ${port}`);
+        });
+    } catch (error) {
+        console.error('Failed to start server:', error);
+        process.exit(1);
+    }
+};
 
-
-
-ConnectToDB();
-
-app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
-});
+startServer();
 
 export default app;
 
