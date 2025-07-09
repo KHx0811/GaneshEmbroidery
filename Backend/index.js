@@ -52,9 +52,9 @@ app.use(session({
   resave: false, 
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+    secure: process.env.NODE_ENV === 'production',
     maxAge: 24 * 60 * 60 * 1000,
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Important for cross-site requests
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     httpOnly: true
   }
 }));
@@ -68,7 +68,6 @@ app.get('/favicon.ico', (req, res) => {
 
 app.use("/", routes);
 
-// Start server with database connection
 const startServer = async () => {
     try {
         await ConnectToDB();
