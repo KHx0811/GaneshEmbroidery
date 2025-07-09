@@ -1,6 +1,6 @@
 import express from 'express';
 import { 
-  addToCart, 
+  addToCart,
   getCart, 
   updateCartItem, 
   removeFromCart, 
@@ -9,7 +9,8 @@ import {
   getWishlist, 
   removeFromWishlist,
   getUserOrders,
-  checkout
+  checkout,
+  buyNow
 } from '../Controllers/userOperations.js';
 import { authenticateToken } from '../Middleware/auth.js';
 
@@ -27,5 +28,6 @@ router.delete('/wishlist/:wishlistItemId', authenticateToken, removeFromWishlist
 
 router.get('/orders', authenticateToken, getUserOrders);
 router.post('/checkout', authenticateToken, checkout);
+router.post('/buy-now', authenticateToken, buyNow);
 
 export default router;

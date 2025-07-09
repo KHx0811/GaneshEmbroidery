@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Header from '../Components/Header';
 import { isAuthenticated, getAuthToken } from '../utils/auth.js';
-import { ArrowLeft, ShoppingCart, Heart, Package, DollarSign, Info } from 'lucide-react';
+import { ArrowLeft, ShoppingCart, Heart, Package, DollarSign, Info, CreditCard } from 'lucide-react';
 
 const url = import.meta.env.VITE_API_BASE_URL;
 
@@ -14,6 +14,7 @@ const ProductDetailsPage = () => {
   const [selectedMachineTypes, setSelectedMachineTypes] = useState([]);
   const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [isAddingToWishlist, setIsAddingToWishlist] = useState(false);
+  const [isBuyingNow, setIsBuyingNow] = useState(false);
 
   useEffect(() => {
     fetchProduct();
@@ -28,7 +29,6 @@ const ProductDetailsPage = () => {
         
         if (data.status === 'success') {
           setProduct(data.data.product);
-          // Clear selected machine types when product changes
           setSelectedMachineTypes([]);
         } else {
           console.error('API returned error status:', data);
@@ -56,7 +56,6 @@ const ProductDetailsPage = () => {
 
     for (const [key, displayName] of Object.entries(machineTypeMapping)) {
       if (designFiles[key] && (designFiles[key].file_url || designFiles[key].google_drive_id)) {
-        // Use the individual price from design_files, fallback to product price if not set
         const price = designFiles[key].price && designFiles[key].price > 0 ? designFiles[key].price : (product?.price || 0);
         availableTypes.push({
           key: key,
@@ -170,6 +169,58 @@ const ProductDetailsPage = () => {
     }
   };
 
+  const buyNow = async () => {
+    if (!isAuthenticated()) {
+      navigate('/login');
+      return;
+    }
+
+    if (selectedMachineTypes.length === 0) {
+      alert('Please select at least one machine type');
+      return;
+    }
+
+    setIsBuyingNow(true);
+    try {
+      const token = getAuthToken();
+      const response = await fetch(`${url}/user/buy-now`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          productId: product._id,
+          machineTypes: selectedMachineTypes.map(type => ({
+            type: type.key,
+            price: type.price
+          })),
+          quantity: 1,
+          totalPrice: getTotalPrice()
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        navigate('/payment', { 
+          state: { 
+            orderId: data.order.orderId,
+            totalAmount: data.order.totalAmount,
+            products: data.order.products
+          }
+        });
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to proceed with purchase');
+      }
+    } catch (error) {
+      console.error('Error with buy now:', error);
+      alert('Failed to proceed with purchase');
+    } finally {
+      setIsBuyingNow(false);
+    }
+  };
+
   const mainContainerStyle = {
     minHeight: '100vh',
     paddingTop: '100px',
@@ -247,6 +298,12 @@ const ProductDetailsPage = () => {
     color: 'white'
   };
 
+  const buyNowButtonStyle = {
+    ...buttonStyle,
+    background: 'linear-gradient(135deg, #007bff, #0056b3)',
+    color: 'white'
+  };
+
   const selectStyle = {
     padding: '10px',
     borderRadius: '8px',
@@ -304,7 +361,6 @@ const ProductDetailsPage = () => {
       </div>
 
       <div style={contentStyle}>
-        {/* Product Image */}
         <div>
           <img
             src={product.image}
@@ -313,7 +369,6 @@ const ProductDetailsPage = () => {
           />
         </div>
 
-        {/* Product Information */}
         <div>
           <h2 style={{ color: '#021d3b', marginBottom: '10px' }}>{product.product_name}</h2>
           <p style={{ color: '#666', marginBottom: '20px', fontSize: '16px', lineHeight: '1.6' }}>
@@ -376,6 +431,16 @@ const ProductDetailsPage = () => {
             >
               <ShoppingCart size={20} />
               {isAddingToCart ? 'Adding...' : 'Add to Cart'}
+            </button>
+            <button
+              style={buyNowButtonStyle}
+              onClick={buyNow}
+              disabled={isBuyingNow || selectedMachineTypes.length === 0}
+              onMouseEnter={(e) => e.target.style.transform = 'translateY(-2px)'}
+              onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
+            >
+              <CreditCard size={20} />
+              {isBuyingNow ? 'Processing...' : 'Buy Now'}
             </button>
             <button
               style={secondaryButtonStyle}

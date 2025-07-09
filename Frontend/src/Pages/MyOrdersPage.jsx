@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import Header from '../Components/Header';
 import { isAuthenticated, getAuthToken } from '../utils/auth.js';
-import { ArrowLeft, Package, Calendar, DollarSign, Eye, Download, Clock, CheckCircle, X } from 'lucide-react';
+import { ArrowLeft, Package, Calendar, DollarSign, Eye, Download, Clock, CheckCircle, X, CreditCard, AlertTriangle, Mail, MailCheck, MailX } from 'lucide-react';
 
 const url = import.meta.env.VITE_API_BASE_URL;
 
 const MyOrdersPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [orders, setOrders] = useState([]);
   const [filteredOrders, setFilteredOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -19,7 +20,17 @@ const MyOrdersPage = () => {
       return;
     }
     fetchUserOrders();
-  }, [navigate]);
+    
+    if (location.state?.paymentSuccess && location.state?.orderId) {
+      const timer = setTimeout(() => {
+        alert(`Payment successful for Order #${location.state.orderId}! Your design files will be prepared and sent via email.`);
+      }, 500);
+      
+      navigate('/my-orders', { replace: true });
+      
+      return () => clearTimeout(timer);
+    }
+  }, [navigate, location.state]);
 
   useEffect(() => {
     filterOrders();
@@ -52,6 +63,30 @@ const MyOrdersPage = () => {
     }
   };
 
+  const resendConfirmationEmail = async (orderId) => {
+    try {
+      const token = getAuthToken();
+      const response = await fetch(`${url}/payment/resend-confirmation/${orderId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        alert('Confirmation email sent successfully!');
+        fetchUserOrders(); // Refresh orders to update email status
+      } else {
+        const data = await response.json();
+        alert(`Failed to send email: ${data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error resending email:', error);
+      alert('Failed to send email. Please try again.');
+    }
+  };
+
   const filterOrders = () => {
     let filtered = [...orders];
 
@@ -67,19 +102,48 @@ const MyOrdersPage = () => {
   const getStatusColor = (status) => {
     switch (status.toLowerCase()) {
       case 'pending': return '#ff9800';
+      case 'paid': return '#2196f3';
+      case 'payment failed': return '#f44336';
       case 'mail sent': return '#4caf50';
       case 'cancelled': return '#f44336';
-      default: return '#2196f3';
+      default: return '#9e9e9e';
     }
   };
 
   const getStatusIcon = (status) => {
     switch (status.toLowerCase()) {
       case 'pending': return <Clock size={16} />;
+      case 'paid': return <CreditCard size={16} />;
+      case 'payment failed': return <AlertTriangle size={16} />;
       case 'mail sent': return <CheckCircle size={16} />;
       case 'cancelled': return <X size={16} />;
       default: return <Package size={16} />;
     }
+  };
+
+  const getEmailStatusInfo = (order) => {
+    if (order.status === 'Paid' || order.status === 'Mail Sent') {
+      if (order.emailStatus === 'sent') {
+        return {
+          icon: <MailCheck size={14} />,
+          text: 'Confirmation email sent',
+          color: '#4caf50'
+        };
+      } else if (order.emailStatus === 'failed') {
+        return {
+          icon: <MailX size={14} />,
+          text: 'Email sending failed',
+          color: '#f44336'
+        };
+      } else if (order.emailStatus === 'pending') {
+        return {
+          icon: <Mail size={14} />,
+          text: 'Sending confirmation email...',
+          color: '#ff9800'
+        };
+      }
+    }
+    return null;
   };
 
   const mainContainerStyle = {
@@ -236,7 +300,19 @@ const MyOrdersPage = () => {
           style={filter === 'pending' ? activeFilterStyle : filterButtonStyle}
           onClick={() => setFilter('pending')}
         >
-          Pending
+          Pending Payment
+        </button>
+        <button
+          style={filter === 'paid' ? activeFilterStyle : filterButtonStyle}
+          onClick={() => setFilter('paid')}
+        >
+          Paid
+        </button>
+        <button
+          style={filter === 'payment_failed' ? activeFilterStyle : filterButtonStyle}
+          onClick={() => setFilter('payment_failed')}
+        >
+          Payment Failed
         </button>
         <button
           style={filter === 'mail_sent' ? activeFilterStyle : filterButtonStyle}
@@ -269,6 +345,19 @@ const MyOrdersPage = () => {
                   {getStatusIcon(order.status)}
                   {order.status}
                 </div>
+                {getEmailStatusInfo(order) && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    marginTop: '8px',
+                    fontSize: '12px',
+                    color: getEmailStatusInfo(order).color
+                  }}>
+                    {getEmailStatusInfo(order).icon}
+                    <span>{getEmailStatusInfo(order).text}</span>
+                  </div>
+                )}
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#4caf50' }}>
@@ -319,6 +408,40 @@ const MyOrdersPage = () => {
                   <Eye size={16} style={{ verticalAlign: 'middle', marginRight: '5px' }} />
                   View Details
                 </button>
+                {order.status === 'Payment Failed' && (
+                  <button
+                    style={{ ...actionButtonStyle, background: '#ff9800', color: 'white', border: 'none' }}
+                    onClick={() => {
+                      navigate('/payment', { 
+                        state: { 
+                          orderId: order.orderId,
+                          totalAmount: order.totalAmount,
+                          products: order.products
+                        }
+                      });
+                    }}
+                  >
+                    <CreditCard size={16} style={{ verticalAlign: 'middle', marginRight: '5px' }} />
+                    Retry Payment
+                  </button>
+                )}
+                {order.status === 'Pending' && (
+                  <button
+                    style={{ ...actionButtonStyle, background: '#2196f3', color: 'white', border: 'none' }}
+                    onClick={() => {
+                      navigate('/payment', { 
+                        state: { 
+                          orderId: order.orderId,
+                          totalAmount: order.totalAmount,
+                          products: order.products
+                        }
+                      });
+                    }}
+                  >
+                    <CreditCard size={16} style={{ verticalAlign: 'middle', marginRight: '5px' }} />
+                    Complete Payment
+                  </button>
+                )}
                 {order.status === 'Mail Sent' && (
                   <button
                     style={{ ...actionButtonStyle, background: '#4caf50', color: 'white', border: 'none' }}
@@ -326,6 +449,15 @@ const MyOrdersPage = () => {
                   >
                     <Download size={16} style={{ verticalAlign: 'middle', marginRight: '5px' }} />
                     Download Files
+                  </button>
+                )}
+                {(order.status === 'Paid' && order.emailStatus === 'failed') && (
+                  <button
+                    style={{ ...actionButtonStyle, background: '#ff5722', color: 'white', border: 'none' }}
+                    onClick={() => resendConfirmationEmail(order.orderId)}
+                  >
+                    <MailX size={16} style={{ verticalAlign: 'middle', marginRight: '5px' }} />
+                    Resend Email
                   </button>
                 )}
               </div>

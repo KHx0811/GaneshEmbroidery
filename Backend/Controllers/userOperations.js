@@ -1,6 +1,7 @@
 import User from "../Models/user.js";
 import Order from "../Models/orders.js";
 import Product from "../Models/product.js";
+import { generateUniqueOrderId, handleDuplicateKeyError } from '../utils/orderUtils.js';
 
 export const addToCart = async (req, res) => {
   try {
@@ -494,9 +495,8 @@ export const checkout = async (req, res) => {
       });
     }
 
-    // Generate order ID
-    const orderCount = await Order.countDocuments();
-    const orderId = `ORD-${String(orderCount + 1).padStart(3, '0')}`;
+    // Generate unique order ID
+    const orderId = await generateUniqueOrderId();
 
     // Populate product details for each item
     const orderProducts = [];
@@ -546,6 +546,92 @@ export const checkout = async (req, res) => {
     });
   } catch (error) {
     console.error('Error during checkout:', error);
+    
+    // Handle duplicate key error specifically
+    const errorResponse = handleDuplicateKeyError(error, 'checkout');
+    if (errorResponse.errorType !== 'GENERAL_ERROR') {
+      return res.status(400).json(errorResponse);
+    }
+    
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+};
+
+export const buyNow = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { productId, machineTypes, quantity = 1, totalPrice } = req.body;
+
+    if (!productId || !machineTypes || !Array.isArray(machineTypes) || machineTypes.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Product ID and machine types are required'
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        error: 'Product not found'
+      });
+    }
+
+    // Generate unique order ID
+    const orderId = await generateUniqueOrderId();
+
+    // Create order products with machine types
+    const orderProducts = machineTypes.map(machineType => ({
+      productId: product._id.toString(),
+      productName: product.product_name,
+      machine_type: machineType.type,
+      price: machineType.price,
+      quantity: quantity
+    }));
+
+    const finalTotalAmount = totalPrice || machineTypes.reduce((total, type) => total + type.price, 0) * quantity;
+
+    // Create new order directly (Buy Now)
+    const newOrder = new Order({
+      orderId,
+      userId: userId,
+      products: orderProducts,
+      totalAmount: finalTotalAmount,
+      status: 'Pending'
+    });
+
+    await newOrder.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Order created successfully for Buy Now',
+      order: {
+        orderId: newOrder.orderId,
+        totalAmount: newOrder.totalAmount,
+        products: newOrder.products,
+        status: newOrder.status
+      }
+    });
+  } catch (error) {
+    console.error('Error during buy now:', error);
+    
+    // Handle duplicate key error specifically
+    const errorResponse = handleDuplicateKeyError(error, 'buy now');
+    if (errorResponse.errorType !== 'GENERAL_ERROR') {
+      return res.status(400).json(errorResponse);
+    }
+    
     res.status(500).json({
       success: false,
       error: 'Internal server error'

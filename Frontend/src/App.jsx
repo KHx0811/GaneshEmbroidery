@@ -13,6 +13,7 @@ import CartPage from './Pages/CartPage'
 import HowToBuyPage from './Pages/HowToBuyPage'
 import FavoritesPage from './Pages/FavoritesPage'
 import ProductDetailsPage from './Pages/ProductDetailsPage'
+import PaymentPage from './Pages/PaymentPage'
 import FAQ from './Pages/FAQ'
 import PrivacyPolicy from './Pages/PrivacyPolicy'
 import TermsAndConditions from './Pages/TermsAndConditions'
@@ -100,6 +101,14 @@ const App = () => {
         <Route 
           path="/product/:productId" 
           element={<ProductDetailsPage />} 
+        />
+        <Route 
+          path="/payment" 
+          element={
+            <ProtectedRoute>
+              <PaymentPage />
+            </ProtectedRoute>
+          } 
         />
         <Route 
           path="/faq" 

@@ -546,3 +546,47 @@ export const getMimeType = (fileName) => {
     
     return mimeTypes[extension] || 'application/octet-stream';
 };
+
+export const downloadFileAsBuffer = async (fileId) => {
+    try {
+        const response = await drive.files.get({
+            fileId: fileId,
+            alt: 'media'
+        }, {
+            responseType: 'stream'
+        });
+
+        // Get file info for filename
+        const fileInfo = await drive.files.get({
+            fileId: fileId,
+            fields: 'name, mimeType, size'
+        });
+
+        return new Promise((resolve, reject) => {
+            const chunks = [];
+            response.data.on('data', chunk => chunks.push(chunk));
+            response.data.on('end', () => {
+                const buffer = Buffer.concat(chunks);
+                resolve({
+                    success: true,
+                    buffer: buffer,
+                    filename: fileInfo.data.name,
+                    mimeType: fileInfo.data.mimeType,
+                    size: fileInfo.data.size
+                });
+            });
+            response.data.on('error', error => {
+                reject({
+                    success: false,
+                    error: error.message
+                });
+            });
+        });
+    } catch (error) {
+        console.error('Error downloading file from Google Drive:', error);
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+};

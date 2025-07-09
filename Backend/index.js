@@ -25,12 +25,12 @@ app.use((req, res, next) => {
   res.setHeader(
     'Content-Security-Policy',
     "default-src 'self' 'unsafe-inline' 'unsafe-eval' data:; " +
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://accounts.google.com https://gapi.google.com; " +
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://accounts.google.com https://gapi.google.com https://checkout.razorpay.com; " +
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://checkout.razorpay.com; " +
     "font-src 'self' https://fonts.gstatic.com data:; " +
     "img-src 'self' data: https: blob: http://localhost:5000 https://ganesh-embroidery.onrender.com; " +
-    "connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com ws: wss: http://localhost:5000 https://ganesh-embroidery.onrender.com; " +
-    "frame-src 'self' https://accounts.google.com; " +
+    "connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com https://api.razorpay.com ws: wss: http://localhost:5000 https://ganesh-embroidery.onrender.com; " +
+    "frame-src 'self' https://accounts.google.com https://api.razorpay.com; " +
     "object-src 'none';"
   );
   

@@ -53,9 +53,52 @@ const orderSchema = new Schema({
     },
     status: {
         type: String,
-        enum: ['Pending', 'Mail Sent', 'Cancelled'],
+        enum: ['Pending', 'Paid', 'Payment Failed', 'Mail Sent', 'Cancelled'],
         default: 'Pending'
     },
+    paymentId: {
+        type: Schema.Types.ObjectId,
+        ref: 'Payment',
+        default: null
+    },
+    paidAt: {
+        type: Date,
+        default: null
+    },
+    customerNotes: {
+        type: String,
+        default: ''
+    },
+    priority: {
+        type: String,
+        enum: ['low', 'medium', 'high'],
+        default: 'medium'
+    },
+    emailSent: {
+        type: Boolean,
+        default: false
+    },
+    emailSentAt: {
+        type: Date,
+        default: null
+    },
+    emailStatus: {
+        type: String,
+        enum: ['pending', 'sent', 'failed'],
+        default: 'pending'
+    },
+    emailError: {
+        type: String,
+        default: null
+    },
+    designFilesEmailSent: {
+        type: Boolean,
+        default: false
+    },
+    designFilesEmailSentAt: {
+        type: Date,
+        default: null
+    }
 }, {
     timestamps: true
 });
