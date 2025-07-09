@@ -3,19 +3,12 @@ import { setAuthToken } from '../utils/auth';
 
 const AuthSuccess = () => {
   useEffect(() => {
-    console.log('AuthSuccess component loaded');
-    console.log('Current URL:', window.location.href);
-    
     const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('token');
     
-    console.log('Token from URL:', token ? 'Token found' : 'No token');
-    
     if (token) {
       setAuthToken(token);
-      
       alert('Google Sign-In successful!');
-      
       window.location.href = '/';
     } else {
       alert('Authentication failed. Please try again.');
