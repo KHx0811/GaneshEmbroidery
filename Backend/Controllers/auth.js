@@ -8,12 +8,12 @@ import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 
 dotenv.config();
 
-const { jwt_secret, google_oauth_client_id, google_oauth_client_secret, client_url } = config;
+const { jwt_secret, google_oauth_client_id, google_oauth_client_secret, client_url, server_url } = config;
 
 passport.use(new GoogleStrategy({
     clientID: google_oauth_client_id,
     clientSecret: google_oauth_client_secret,
-    callbackURL: "/auth/google/callback"
+    callbackURL: server_url ? `${server_url}/auth/google/callback` : "/auth/google/callback"
 }, async (accessToken, refreshToken, profile, done) => {
     try {
         let user = await User.findOne({ googleId: profile.id });

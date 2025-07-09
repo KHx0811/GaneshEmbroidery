@@ -9,6 +9,7 @@ export default{
     google_oauth_client_id: process.env.GOOGLE_OAUTH_CLIENT_ID,
     google_oauth_client_secret: process.env.GOOGLE_OAUTH_CLIENT_SECRET,
     client_url: process.env.CLIENT_URL,
+    server_url: process.env.SERVER_URL,
     google_drive_client_id: process.env.GOOGLE_DRIVE_CLIENT_ID,
     google_drive_client_secret: process.env.GOOGLE_DRIVE_CLIENT_SECRET,
     google_drive_redirect_uri: process.env.GOOGLE_DRIVE_REDIRECT_URI,
