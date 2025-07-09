@@ -10,10 +10,15 @@ const { port, client_url } = config;
 const app = express();
 
 app.use(cors({
-  origin: client_url || 'http://localhost:5173',
+  origin: [
+    'https://ganesh-embroidery.vercel.app',
+    'http://localhost:5173',
+    client_url
+  ].filter(Boolean),
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 200
 }));
 
 app.use((req, res, next) => {
@@ -23,8 +28,8 @@ app.use((req, res, next) => {
     "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://accounts.google.com https://gapi.google.com; " +
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
     "font-src 'self' https://fonts.gstatic.com data:; " +
-    "img-src 'self' data: https: blob: http://localhost:5000; " +
-    "connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com ws: wss: http://localhost:5000; " +
+    "img-src 'self' data: https: blob: http://localhost:5000 https://ganesh-embroidery.onrender.com; " +
+    "connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com ws: wss: http://localhost:5000 https://ganesh-embroidery.onrender.com; " +
     "frame-src 'self' https://accounts.google.com; " +
     "object-src 'none';"
   );
@@ -39,14 +44,18 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '100mb', parameterLimit: 50000 }));
 app.use(express.urlencoded({ extended: true, limit: '100mb', parameterLimit: 50000 }));
 
+app.use('/uploads', express.static('uploads'));
+app.use('/images', express.static('images'));
+
 app.use(session({ 
   secret: process.env.SESSION_SECRET || 'ItsSecret', 
   resave: false, 
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
     maxAge: 24 * 60 * 60 * 1000,
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Important for cross-site requests
+    httpOnly: true
   }
 }));
 
