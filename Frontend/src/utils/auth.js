@@ -1,5 +1,9 @@
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://ganesh-embroidery.onrender.com';
 
+// Debug logging
+console.log('Environment variable VITE_API_BASE_URL:', import.meta.env.VITE_API_BASE_URL);
+console.log('Final API_BASE_URL being used:', API_BASE_URL);
+
 export const getAuthToken = () => {
   return localStorage.getItem('authToken');
 };
