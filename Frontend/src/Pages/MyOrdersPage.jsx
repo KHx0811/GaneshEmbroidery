@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import Header from '../Components/Header';
 import { isAuthenticated, getAuthToken } from '../utils/auth.js';
 import { ArrowLeft, Package, Calendar, DollarSign, Eye, Download, Clock, CheckCircle, X, CreditCard, AlertTriangle, Mail, MailCheck, MailX } from 'lucide-react';
+import '../styles/animations.css';
 
 const url = import.meta.env.VITE_API_BASE_URL;
 
@@ -13,6 +14,7 @@ const MyOrdersPage = () => {
   const [filteredOrders, setFilteredOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all'); // all, pending, mail_sent, cancelled
+  const [processingOrderId, setProcessingOrderId] = useState(null);
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -22,8 +24,76 @@ const MyOrdersPage = () => {
     fetchUserOrders();
     
     if (location.state?.paymentSuccess && location.state?.orderId) {
+      setProcessingOrderId(location.state.orderId);
+      
+      if (location.state.showProcessingMessage) {
+        const timer = setTimeout(() => {
+          alert(`Payment successful! We're sending your confirmation email with design files. Check your inbox shortly.`);
+        }, 500);
+        
+        // Force refresh orders immediately and multiple times initially
+        fetchUserOrders(true);
+        setTimeout(() => fetchUserOrders(true), 1000);
+        setTimeout(() => fetchUserOrders(true), 2000);
+        
+        // Start aggressive polling for order status updates
+        const pollInterval = setInterval(() => {
+          fetchUserOrders(true); // Force refresh on each poll
+        }, 2000); // Poll every 2 seconds
+        
+        // Stop polling after 3 minutes
+        const stopPolling = setTimeout(() => {
+          clearInterval(pollInterval);
+          setProcessingOrderId(null);
+        }, 180000);
+        
+        navigate('/my-orders', { replace: true });
+        
+        return () => {
+          clearTimeout(timer);
+          clearInterval(pollInterval);
+          clearTimeout(stopPolling);
+        };
+      }
+    }
+    
+    // Handle payment timeout case
+    if (location.state?.paymentTimeout && location.state?.orderId) {
       const timer = setTimeout(() => {
-        alert(`Payment successful for Order #${location.state.orderId}! Your design files will be prepared and sent via email.`);
+        alert(`Payment may have been processed. Please check your order status for Order #${location.state.orderId}. If payment was deducted but order status is not updated, please contact support.`);
+      }, 500);
+      
+      navigate('/my-orders', { replace: true });
+      
+      return () => clearTimeout(timer);
+    }
+    
+    // Handle payment cancelled case
+    if (location.state?.paymentCancelled && location.state?.orderId) {
+      const timer = setTimeout(() => {
+        alert(`Payment was cancelled for Order #${location.state.orderId}. You can try again anytime.`);
+      }, 500);
+      
+      navigate('/my-orders', { replace: true });
+      
+      return () => clearTimeout(timer);
+    }
+    
+    // Handle payment failed case
+    if (location.state?.paymentFailed && location.state?.orderId) {
+      const timer = setTimeout(() => {
+        alert(`Payment failed for Order #${location.state.orderId}: ${location.state.errorMessage || 'Please try again.'}. You can retry payment anytime.`);
+      }, 500);
+      
+      navigate('/my-orders', { replace: true });
+      
+      return () => clearTimeout(timer);
+    }
+    
+    // Handle payment verification failed case
+    if (location.state?.paymentVerificationFailed && location.state?.orderId) {
+      const timer = setTimeout(() => {
+        alert(`${location.state.errorMessage || 'Payment verification failed.'} Please check your order status for Order #${location.state.orderId}.`);
       }, 500);
       
       navigate('/my-orders', { replace: true });
@@ -34,16 +104,29 @@ const MyOrdersPage = () => {
 
   useEffect(() => {
     filterOrders();
-  }, [orders, filter]);
+    
+    // Check if processing order status has changed
+    if (processingOrderId) {
+      const processingOrder = orders.find(order => order.orderId === processingOrderId);
+      if (processingOrder) {
+        // Keep processing indicator if status is Pending, Sending Email, or if email is still pending
+        if (processingOrder.status === 'Mail Sent' || 
+            (processingOrder.status === 'Paid' && processingOrder.emailStatus === 'sent')) {
+          setProcessingOrderId(null);
+        }
+      }
+    }
+  }, [orders, filter, processingOrderId]);
 
-  const fetchUserOrders = async () => {
+  const fetchUserOrders = async (forceRefresh = false) => {
     try {
       const token = getAuthToken();
-      const response = await fetch(`${url}/user/orders`, {
+      const response = await fetch(`${url}/user/orders${forceRefresh ? '?t=' + Date.now() : ''}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        cache: forceRefresh ? 'no-cache' : 'default'
       });
       
       if (response.ok) {
@@ -52,11 +135,9 @@ const MyOrdersPage = () => {
           setOrders(data.orders || []);
         }
       } else {
-        console.error('Failed to fetch orders');
         setOrders([]);
       }
     } catch (error) {
-      console.error('Error fetching orders:', error);
       setOrders([]);
     } finally {
       setLoading(false);
@@ -82,7 +163,6 @@ const MyOrdersPage = () => {
         alert(`Failed to send email: ${data.error || 'Unknown error'}`);
       }
     } catch (error) {
-      console.error('Error resending email:', error);
       alert('Failed to send email. Please try again.');
     }
   };
@@ -103,6 +183,7 @@ const MyOrdersPage = () => {
     switch (status.toLowerCase()) {
       case 'pending': return '#ff9800';
       case 'paid': return '#2196f3';
+      case 'sending email': return '#9c27b0';
       case 'payment failed': return '#f44336';
       case 'mail sent': return '#4caf50';
       case 'cancelled': return '#f44336';
@@ -114,11 +195,19 @@ const MyOrdersPage = () => {
     switch (status.toLowerCase()) {
       case 'pending': return <Clock size={16} />;
       case 'paid': return <CreditCard size={16} />;
+      case 'sending email': return <Mail size={16} className="processing-animation" />;
       case 'payment failed': return <AlertTriangle size={16} />;
       case 'mail sent': return <CheckCircle size={16} />;
       case 'cancelled': return <X size={16} />;
       default: return <Package size={16} />;
     }
+  };
+
+  const getStatusText = (status, orderId) => {
+    if (status === 'Sending Email') {
+      return 'Sending Email... Check your inbox!';
+    }
+    return status;
   };
 
   const getEmailStatusInfo = (order) => {
@@ -278,6 +367,51 @@ const MyOrdersPage = () => {
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <button
+            style={{
+              background: 'linear-gradient(135deg, #2196f3, #1976d2)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '8px 16px',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+            onClick={() => {
+              fetchUserOrders(true);
+            }}
+            onMouseEnter={(e) => e.target.style.transform = 'translateY(-2px)'}
+            onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
+          >
+            🔄 Refresh
+          </button>
+          {processingOrderId && (
+            <div style={{
+              background: 'rgba(156, 39, 176, 0.1)',
+              color: '#9c27b0',
+              padding: '4px 12px',
+              borderRadius: '20px',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px'
+            }}>
+              <div className="processing-spinner" style={{
+                width: '12px',
+                height: '12px',
+                border: '2px solid #9c27b0',
+                borderTop: '2px solid transparent',
+                borderRadius: '50%'
+              }}></div>
+              Auto-refreshing...
+            </div>
+          )}
           <span style={{ color: '#666', fontSize: '18px' }}>
             Total Orders: {orders.length}
           </span>
@@ -309,6 +443,12 @@ const MyOrdersPage = () => {
           Paid
         </button>
         <button
+          style={filter === 'sending_email' ? activeFilterStyle : filterButtonStyle}
+          onClick={() => setFilter('sending_email')}
+        >
+          Sending Email
+        </button>
+        <button
           style={filter === 'payment_failed' ? activeFilterStyle : filterButtonStyle}
           onClick={() => setFilter('payment_failed')}
         >
@@ -332,19 +472,42 @@ const MyOrdersPage = () => {
         {filteredOrders.map((order) => (
           <div
             key={order._id}
-            style={orderCardStyle}
+            className={order.status === 'Sending Email' ? 'mail-processing-card' : ''}
+            style={{
+              ...orderCardStyle,
+              ...(order.status === 'Sending Email' ? {
+                border: '2px solid #9c27b0',
+                background: 'linear-gradient(135deg, #f3e5f5 0%, #ffffff 100%)',
+                boxShadow: '0 4px 15px rgba(156, 39, 176, 0.2)'
+              } : {})
+            }}
             onMouseEnter={(e) => e.target.style.transform = 'translateY(-3px)'}
             onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
               <div>
                 <h3 style={{ margin: '0 0 10px 0', color: '#021d3b', fontSize: '1.3rem' }}>
-                  Order #{order.orderId}
+                  {[...new Set(order.products.map(p => p.productName))].join(', ')}
                 </h3>
+                <p style={{ margin: '0 0 10px 0', color: '#666', fontSize: '0.9rem' }}>
+                  Order #{order.orderId}
+                </p>
                 <div style={statusBadgeStyle(order.status)}>
                   {getStatusIcon(order.status)}
-                  {order.status}
+                  {getStatusText(order.status, order.orderId)}
                 </div>
+                {order.status === 'Sending Email' && (
+                  <div className="mail-processing-indicator">
+                    <div className="processing-spinner" style={{
+                      width: '16px',
+                      height: '16px',
+                      border: '2px solid #9c27b0',
+                      borderTop: '2px solid transparent',
+                      borderRadius: '50%'
+                    }}></div>
+                    <span>Processing your design files...</span>
+                  </div>
+                )}
                 {getEmailStatusInfo(order) && (
                   <div style={{
                     display: 'flex',

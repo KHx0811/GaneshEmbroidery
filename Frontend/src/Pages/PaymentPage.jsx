@@ -28,6 +28,13 @@ const PaymentPage = () => {
     }
 
     loadRazorpayScript();
+
+    return () => {
+      if (window.currentRzp) {
+        window.currentRzp.close();
+        window.currentRzp = null;
+      }
+    };
   }, [location.state, navigate]);
 
   const loadRazorpayScript = () => {
@@ -35,7 +42,6 @@ const PaymentPage = () => {
     script.src = 'https://checkout.razorpay.com/v1/checkout.js';
     script.onload = () => setRazorpayLoaded(true);
     script.onerror = () => {
-      console.error('Failed to load Razorpay script');
       alert('Failed to load payment gateway. Please refresh and try again.');
     };
     document.body.appendChild(script);
@@ -84,7 +90,20 @@ const PaymentPage = () => {
         order_id: data.razorpayOrder.id,
         image: '/logo.png',
         handler: async (response) => {
-          await verifyPayment(response, data.paymentId);
+          navigate('/my-orders', { 
+            state: { 
+              paymentSuccess: true, 
+              orderId: orderDetails.orderId,
+              showProcessingMessage: true,
+              verifying: true
+            }
+          });
+          
+          try {
+            await verifyPayment(response, data.paymentId);
+          } catch (error) {
+            
+          }
         },
         prefill: {
           name: '',
@@ -100,9 +119,16 @@ const PaymentPage = () => {
         modal: {
           ondismiss: () => {
             setPaymentLoading(false);
+            window.currentRzp = null;
             handlePaymentFailure(data.razorpayOrder.id, null, { 
               code: 'PAYMENT_CANCELLED', 
               description: 'Payment was cancelled by user' 
+            });
+            navigate('/my-orders', {
+              state: {
+                paymentCancelled: true,
+                orderId: orderDetails.orderId
+              }
             });
           }
         }
@@ -110,19 +136,44 @@ const PaymentPage = () => {
 
       const rzp = new window.Razorpay(options);
       
+      window.currentRzp = rzp;
+      
       rzp.on('payment.failed', (response) => {
         setPaymentLoading(false);
+        window.currentRzp = null;
         handlePaymentFailure(
           data.razorpayOrder.id, 
           response.error.metadata?.payment_id || null,
           response.error
         );
+        setTimeout(() => {
+          navigate('/my-orders', {
+            state: {
+              paymentFailed: true,
+              orderId: orderDetails.orderId,
+              errorMessage: response.error.description || 'Payment failed'
+            }
+          });
+        }, 1000);
       });
 
       rzp.open();
 
+      const fallbackTimeout = setTimeout(() => {
+        if (paymentLoading) {
+          setPaymentLoading(false);
+          navigate('/my-orders', {
+            state: {
+              paymentTimeout: true,
+              orderId: orderDetails.orderId
+            }
+          });
+        }
+      }, 30000);
+
+      return () => clearTimeout(fallbackTimeout);
+
     } catch (error) {
-      console.error('Error initiating payment:', error);
       alert('Failed to initiate payment. Please try again.');
       setPaymentLoading(false);
     }
@@ -148,22 +199,23 @@ const PaymentPage = () => {
 
       const data = await verifyResponse.json();
 
-      if (data.success) {
-        alert('Payment successful! Your order has been confirmed.');
-        navigate('/my-orders', { 
-          state: { 
-            paymentSuccess: true, 
-            orderId: orderDetails.orderId 
+      if (!data.success) {
+        navigate('/my-orders', {
+          state: {
+            paymentVerificationFailed: true,
+            orderId: orderDetails.orderId,
+            errorMessage: data.error || 'Payment verification failed. Please contact support if amount was deducted.'
           }
         });
-      } else {
-        throw new Error(data.error || 'Payment verification failed');
       }
     } catch (error) {
-      console.error('Error verifying payment:', error);
-      alert('Payment verification failed. Please contact support if amount was deducted.');
-    } finally {
-      setPaymentLoading(false);
+      navigate('/my-orders', {
+        state: {
+          paymentVerificationFailed: true,
+          orderId: orderDetails.orderId,
+          errorMessage: error.message || 'Payment verification failed. Please contact support if amount was deducted.'
+        }
+      });
     }
   };
 
@@ -183,11 +235,8 @@ const PaymentPage = () => {
           error: error
         })
       });
-
-      alert(`Payment failed: ${error.description || 'Unknown error'}`);
     } catch (err) {
-      console.error('Error recording payment failure:', err);
-      alert('Payment failed. Please try again.');
+      
     }
   };
 
@@ -461,28 +510,51 @@ const PaymentPage = () => {
           <div style={{ textAlign: 'center', marginTop: '15px' }}>
             <button
               style={{
-                background: 'none',
-                border: '1px solid #ddd',
+                background: paymentLoading ? 'linear-gradient(135deg, #4caf50, #45a049)' : 'none',
+                border: paymentLoading ? 'none' : '1px solid #ddd',
                 borderRadius: '8px',
                 padding: '10px 20px',
                 cursor: 'pointer',
-                color: '#666',
+                color: paymentLoading ? 'white' : '#666',
                 fontSize: '14px',
+                fontWeight: paymentLoading ? 'bold' : 'normal',
                 transition: 'all 0.3s ease'
               }}
               onClick={() => navigate('/my-orders')}
               onMouseEnter={(e) => {
-                e.target.style.background = '#f5f5f5';
-                e.target.style.borderColor = '#999';
+                if (!paymentLoading) {
+                  e.target.style.background = '#f5f5f5';
+                  e.target.style.borderColor = '#999';
+                }
               }}
               onMouseLeave={(e) => {
-                e.target.style.background = 'none';
-                e.target.style.borderColor = '#ddd';
+                if (!paymentLoading) {
+                  e.target.style.background = 'none';
+                  e.target.style.borderColor = '#ddd';
+                }
               }}
             >
-              View My Orders
+              {paymentLoading ? '✓ Payment Started - View My Orders' : 'View My Orders'}
             </button>
           </div>
+
+          {paymentLoading && (
+            <div style={{
+              textAlign: 'center',
+              marginTop: '10px',
+              padding: '10px',
+              background: 'rgba(76, 175, 80, 0.1)',
+              borderRadius: '8px',
+              border: '1px solid rgba(76, 175, 80, 0.3)'
+            }}>
+              <div style={{ color: '#4caf50', fontSize: '14px', fontWeight: 'bold' }}>
+                Payment in progress...
+              </div>
+              <div style={{ color: '#666', fontSize: '12px', marginTop: '5px' }}>
+                Click "View My Orders" above to track your order status
+              </div>
+            </div>
+          )}
 
           <div style={{ 
             textAlign: 'center', 

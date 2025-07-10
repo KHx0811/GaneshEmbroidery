@@ -178,6 +178,17 @@ export const verifyPayment = async (req, res) => {
                 error: 'Payment record not found'
             });
         }
+        
+        // Check if payment is already processed
+        if (payment.status === 'captured' && payment.razorpayPaymentId) {
+            console.log(`Payment ${paymentId} already processed, skipping duplicate processing`);
+            return res.status(200).json({
+                success: true,
+                message: 'Payment already verified successfully',
+                paymentStatus: payment.status,
+                orderId: payment.orderId
+            });
+        }
 
         try {
             const paymentDetails = await razorpay.payments.fetch(razorpay_payment_id);
@@ -197,24 +208,30 @@ export const verifyPayment = async (req, res) => {
 
             await payment.save();
 
-            await Order.findOneAndUpdate(
+            // Check current order status to avoid going backwards
+            const currentOrder = await Order.findOne({ orderId: payment.orderId });
+            if (currentOrder.status === 'Mail Sent') {
+                console.log(`Order ${payment.orderId} already completed, not updating status`);
+                return res.status(200).json({
+                    success: true,
+                    message: 'Payment verified successfully (order already completed)',
+                    paymentStatus: payment.status,
+                    orderId: payment.orderId
+                });
+            }
+
+            const orderUpdate = await Order.findOneAndUpdate(
                 { orderId: payment.orderId },
                 { 
-                    status: 'Paid',
+                    status: 'Sending Email',
+                    emailStatus: 'pending',
                     paymentId: payment._id,
                     paidAt: payment.paidAt
-                }
+                },
+                { new: true }
             );
-
-            // Send payment confirmation email after successful payment
-            try {
-                console.log(`Sending payment confirmation email for order: ${payment.orderId}`);
-                await sendPaymentConfirmationEmail(payment.orderId);
-                console.log(`Payment confirmation email sent successfully for order: ${payment.orderId}`);
-            } catch (emailError) {
-                console.error(`Error sending payment confirmation email for order ${payment.orderId}:`, emailError);
-                // Don't fail the payment verification if email fails
-            }
+            
+            console.log(`Order ${payment.orderId} status updated to:`, orderUpdate.status, orderUpdate.emailStatus);
 
         } catch (razorpayError) {
             console.error('Error fetching payment details from Razorpay:', razorpayError);
@@ -224,14 +241,30 @@ export const verifyPayment = async (req, res) => {
             payment.paidAt = new Date();
             await payment.save();
 
-            await Order.findOneAndUpdate(
+            // Check current order status to avoid going backwards
+            const currentOrder = await Order.findOne({ orderId: payment.orderId });
+            if (currentOrder.status === 'Mail Sent') {
+                console.log(`Order ${payment.orderId} already completed (fallback), not updating status`);
+                return res.status(200).json({
+                    success: true,
+                    message: 'Payment verified successfully (order already completed)',
+                    paymentStatus: payment.status,
+                    orderId: payment.orderId
+                });
+            }
+
+            const orderUpdate = await Order.findOneAndUpdate(
                 { orderId: payment.orderId },
                 { 
-                    status: 'Paid',
+                    status: 'Sending Email',
+                    emailStatus: 'pending',
                     paymentId: payment._id,
                     paidAt: payment.paidAt
-                }
+                },
+                { new: true }
             );
+            
+            console.log(`Order ${payment.orderId} status updated (fallback) to:`, orderUpdate.status, orderUpdate.emailStatus);
         }
 
         // Send payment confirmation email after successful payment

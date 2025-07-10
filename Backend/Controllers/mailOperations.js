@@ -42,9 +42,7 @@ const createTransporter = async () => {
       }
     });
 
-    console.log('Verifying Gmail transporter...');
     await transporter.verify();
-    console.log('Gmail transporter verified successfully');
 
     return transporter;
   } catch (error) {
@@ -61,7 +59,6 @@ export const sendPaymentConfirmationEmail = async (orderId, fromEmail = null) =>
     }
 
     if (order.emailSent) {
-      console.log(`Email already sent for order ${orderId}, skipping...`);
       return { success: true, messageId: 'already_sent', message: 'Email already sent for this order' };
     }
 
@@ -132,19 +129,24 @@ export const sendPaymentConfirmationEmail = async (orderId, fromEmail = null) =>
 
     const emailContent = generatePaymentConfirmationHTML(order, user, productDetails, designFilesAttachments.length > 0);
     
+    // Generate subject with unique product names
+    const uniqueProductNames = [...new Set(productDetails.map(p => p.productName))];
+    const productNames = uniqueProductNames.join(', ');
+    const subjectLine = productNames.length > 50 ? 
+      `${productNames.substring(0, 50)}... - Payment Confirmed` : 
+      `${productNames} - Payment Confirmed`;
+    
     const transporter = await createTransporter();
     
     const mailOptions = {
       from: `Ganesh Embroidery <${dynamicFromEmail}>`,
       to: user.email,
-      subject: `Payment Confirmation - Order #${orderId}`,
+      subject: subjectLine,
       html: emailContent,
       attachments: designFilesAttachments
     };
 
-    console.log(`Sending payment confirmation email to ${user.email} for order ${orderId}...`);
     const result = await transporter.sendMail(mailOptions);
-    console.log(`Email sent successfully! Message ID: ${result.messageId}`);
     
     await Order.findOneAndUpdate(
       { orderId },
@@ -156,8 +158,6 @@ export const sendPaymentConfirmationEmail = async (orderId, fromEmail = null) =>
       }
     );
 
-    console.log('Payment confirmation email sent successfully:', result.messageId);
-    console.log(`Attached ${designFilesAttachments.length} design files`);
     return { success: true, messageId: result.messageId };
 
   } catch (error) {
@@ -195,7 +195,6 @@ export const sendDesignFilesEmail = async (orderId, designFiles, fromEmail = nul
     }
 
     const dynamicFromEmail = fromEmail || gmail_user_email || 'ganeshembroidery99@gmail.com';
-    console.log(`Sending design files email from: ${dynamicFromEmail} to: ${user.email}`);
 
     const productDetails = await Promise.all(
       order.products.map(async (product) => {
@@ -209,12 +208,19 @@ export const sendDesignFilesEmail = async (orderId, designFiles, fromEmail = nul
 
     const emailContent = generateDesignFilesHTML(order, user, productDetails, designFiles);
     
+    // Generate subject with unique product names
+    const uniqueProductNames = [...new Set(productDetails.map(p => p.productName))];
+    const productNames = uniqueProductNames.join(', ');
+    const subjectLine = productNames.length > 50 ? 
+      `${productNames.substring(0, 50)}... - Design Files Ready` : 
+      `${productNames} - Design Files Ready`;
+    
     const transporter = await createTransporter();
     
     const mailOptions = {
       from: `Ganesh Embroidery <${dynamicFromEmail}>`,
       to: user.email,
-      subject: `Your Design Files Are Ready - Order #${orderId}`,
+      subject: subjectLine,
       html: emailContent,
       attachments: designFiles.map(file => ({
         filename: file.filename,
@@ -234,7 +240,6 @@ export const sendDesignFilesEmail = async (orderId, designFiles, fromEmail = nul
       }
     );
 
-    console.log('Design files email sent successfully:', result.messageId);
     return { success: true, messageId: result.messageId };
 
   } catch (error) {
@@ -244,13 +249,18 @@ export const sendDesignFilesEmail = async (orderId, designFiles, fromEmail = nul
 };
 
 const generatePaymentConfirmationHTML = (order, user, productDetails, hasAttachments = false) => {
+  const uniqueProductNames = [...new Set(productDetails.map(p => p.productName))];
+  const productNames = uniqueProductNames.join(', ');
+  const mainProductName = uniqueProductNames.length === 1 ? uniqueProductNames[0] : 
+    `${uniqueProductNames[0]} ${uniqueProductNames.length > 1 ? `and ${uniqueProductNames.length - 1} other design${uniqueProductNames.length > 2 ? 's' : ''}` : ''}`;
+  
   return `
     <!DOCTYPE html>
     <html>
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Payment Confirmation</title>
+      <title>Payment Confirmation - ${mainProductName}</title>
       <style>
         body { font-family: Arial, sans-serif; line-height: 1.6; margin: 0; padding: 0; background-color: #f4f4f4; }
         .container { max-width: 600px; margin: 0 auto; background-color: white; padding: 20px; }
@@ -262,34 +272,45 @@ const generatePaymentConfirmationHTML = (order, user, productDetails, hasAttachm
         .total { font-size: 18px; font-weight: bold; color: #4caf50; text-align: right; margin-top: 15px; }
         .footer { text-align: center; color: #666; font-size: 14px; margin-top: 30px; }
         .button { display: inline-block; background: linear-gradient(135deg, #4caf50, #45a049); color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 10px 0; }
+        .product-highlight { background: linear-gradient(135deg, #e8f5e8, #f1f8e9); padding: 15px; border-radius: 10px; margin: 15px 0; border-left: 4px solid #4caf50; }
       </style>
     </head>
     <body>
       <div class="container">
         <div class="header">
-          <h1>Payment Confirmed!</h1>
+          <h1>🎉 Payment Confirmed!</h1>
+          <h2 style="margin: 10px 0; font-size: 22px;">${mainProductName}</h2>
           <p>Thank you for your purchase, ${user.username}!</p>
         </div>
         
         <div class="content">
-          <p>Your payment has been successfully processed. Here are your order details:</p>
+          <div class="product-highlight">
+            <h3 style="color: #2e7d32; margin-top: 0;">✅ Your Design${uniqueProductNames.length > 1 ? 's' : ''} Confirmed</h3>
+            <p style="color: #2e7d32; font-size: 16px; margin: 5px 0;">
+              <strong>${productNames}</strong>
+            </p>
+            <p style="color: #666; font-size: 14px; margin: 5px 0;">
+              Reference: Order #${order.orderId}
+            </p>
+          </div>
+          
+          <p>Your payment has been successfully processed. Here are your design details:</p>
           
           <div class="order-details">
-            <h3>Order Information</h3>
-            <p><strong>Order ID:</strong> ${order.orderId}</p>
+            <h3>Design Information</h3>
             <p><strong>Order Date:</strong> ${new Date(order.orderDate).toLocaleDateString('en-IN', {
               year: 'numeric',
               month: 'long',
               day: 'numeric'
             })}</p>
-            <p><strong>Payment Status:</strong> <span style="color: #4caf50;">Paid</span></p>
+            <p><strong>Payment Status:</strong> <span style="color: #4caf50;">✅ Paid</span></p>
           </div>
 
           <div class="order-details">
-            <h3>Design Details</h3>
+            <h3>Your Design${uniqueProductNames.length > 1 ? 's' : ''}</h3>
             ${productDetails.map(product => `
               <div class="product-item">
-                <h4>${product.productName}</h4>
+                <h4 style="color: #2e7d32;">🎨 ${product.productName}</h4>
                 <p><strong>Machine Type:</strong> ${product.machine_type}</p>
                 <p><strong>Category:</strong> ${product.productInfo?.category || 'N/A'}</p>
                 <p><strong>Quantity:</strong> ${product.quantity}</p>
@@ -304,25 +325,25 @@ const generatePaymentConfirmationHTML = (order, user, productDetails, hasAttachm
 
           ${hasAttachments ? `
           <div class="order-details">
-            <h3>📎 Attached Design Files</h3>
-            <p style="color: #4caf50; font-weight: bold;">Your embroidery design files are attached to this email!</p>
+            <h3>📎 Your Design Files Are Attached!</h3>
+            <p style="color: #4caf50; font-weight: bold;">Your embroidery design files for "${productNames}" are attached to this email!</p>
             <div style="background-color: #fff3e0; padding: 15px; border-radius: 8px; margin: 10px 0;">
-              <h4 style="color: #ff9800; margin-top: 0;">📋 How to Use Your Files</h4>
+              <h4 style="color: #ff9800; margin-top: 0;">📋 How to Use Your Design Files</h4>
               <ol style="color: #f57c00;">
                 <li>Download all attached files to your computer</li>
                 <li>Transfer the files to your embroidery machine via USB or memory card</li>
                 <li>Load the design in your machine's embroidery software</li>
-                <li>Start embroidering your beautiful design!</li>
+                <li>Start embroidering your beautiful "${mainProductName}" design!</li>
               </ol>
             </div>
           </div>
           ` : ''}
 
           <div style="background-color: #e8f5e8; padding: 15px; border-radius: 8px; margin: 20px 0;">
-            <h4 style="color: #4caf50; margin-top: 0;">What's Next?</h4>
+            <h4 style="color: #4caf50; margin-top: 0;">What's Next for Your "${mainProductName}" Design?</h4>
             ${hasAttachments ? `
             <ul style="color: #2e7d32;">
-              <li>✅ Your embroidery design files are attached to this email</li>
+              <li>✅ Your "${productNames}" design files are attached to this email</li>
               <li>Download the attached files to your computer</li>
               <li>Transfer the files to your embroidery machine via USB or memory card</li>
               <li>Load the design and start embroidering!</li>
@@ -330,15 +351,15 @@ const generatePaymentConfirmationHTML = (order, user, productDetails, hasAttachm
             </ul>
             ` : `
             <ul style="color: #2e7d32;">
-              <li>Your order is now being processed</li>
+              <li>Your "${productNames}" design is now being processed</li>
               <li>Our team will prepare your embroidery design files</li>
-              <li>You'll receive the design files via email within 24-48 hours</li>
+              <li>You'll receive your "${mainProductName}" design files via email within 24-48 hours</li>
               <li>Files will be in the machine format you selected</li>
             </ul>
             `}
           </div>
 
-          <p>If you have any questions about your order, please contact our support team.</p>
+          <p>If you have any questions about your "${mainProductName}" design, please contact our support team.</p>
         </div>
 
         <div class="footer">
@@ -352,13 +373,18 @@ const generatePaymentConfirmationHTML = (order, user, productDetails, hasAttachm
 };
 
 const generateDesignFilesHTML = (order, user, productDetails, designFiles) => {
+  const uniqueProductNames = [...new Set(productDetails.map(p => p.productName))];
+  const productNames = uniqueProductNames.join(', ');
+  const mainProductName = uniqueProductNames.length === 1 ? uniqueProductNames[0] : 
+    `${uniqueProductNames[0]} ${uniqueProductNames.length > 1 ? `and ${uniqueProductNames.length - 1} other design${uniqueProductNames.length > 2 ? 's' : ''}` : ''}`;
+    
   return `
     <!DOCTYPE html>
     <html>
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Your Design Files Are Ready</title>
+      <title>Your Design Files Are Ready - ${mainProductName}</title>
       <style>
         body { font-family: Arial, sans-serif; line-height: 1.6; margin: 0; padding: 0; background-color: #f4f4f4; }
         .container { max-width: 600px; margin: 0 auto; background-color: white; padding: 20px; }
@@ -368,21 +394,35 @@ const generateDesignFilesHTML = (order, user, productDetails, designFiles) => {
         .file-item { background-color: white; padding: 10px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #4caf50; }
         .instructions { background-color: #fff3e0; padding: 15px; border-radius: 8px; margin: 20px 0; }
         .footer { text-align: center; color: #666; font-size: 14px; margin-top: 30px; }
+        .product-highlight { background: linear-gradient(135deg, #e8f5e8, #f1f8e9); padding: 15px; border-radius: 10px; margin: 15px 0; border-left: 4px solid #4caf50; }
       </style>
     </head>
     <body>
       <div class="container">
         <div class="header">
           <h1>🎉 Your Design Files Are Ready!</h1>
-          <p>Order #${order.orderId}</p>
+          <h2 style="margin: 10px 0; font-size: 22px;">${mainProductName}</h2>
+          <p style="color: #666; font-size: 14px; margin: 5px 0;">
+            Reference: Order #${order.orderId}
+          </p>
         </div>
         
         <div class="content">
+          <div class="product-highlight">
+            <h3 style="color: #2e7d32; margin-top: 0;">✅ Design Files Ready</h3>
+            <p style="color: #2e7d32; font-size: 16px; margin: 5px 0;">
+              <strong>${productNames}</strong>
+            </p>
+            <p style="color: #666; font-size: 14px; margin: 5px 0;">
+              Your embroidery design files are attached and ready to use!
+            </p>
+          </div>
+          
           <p>Dear ${user.username},</p>
-          <p>Great news! Your embroidery design files have been prepared and are attached to this email.</p>
+          <p>Great news! Your "${mainProductName}" embroidery design files have been prepared and are attached to this email.</p>
 
           <div class="files-section">
-            <h3>📁 Attached Files</h3>
+            <h3>📁 Your Design Files</h3>
             ${designFiles.map(file => `
               <div class="file-item">
                 <strong>${file.filename}</strong>
@@ -392,17 +432,17 @@ const generateDesignFilesHTML = (order, user, productDetails, designFiles) => {
           </div>
 
           <div class="instructions">
-            <h4 style="color: #ff9800; margin-top: 0;">📋 Instructions for Use</h4>
+            <h4 style="color: #ff9800; margin-top: 0;">📋 How to Use Your "${mainProductName}" Design Files</h4>
             <ol style="color: #f57c00;">
               <li>Download all attached files to your computer</li>
               <li>Transfer the files to your embroidery machine via USB or memory card</li>
               <li>Select the appropriate file format for your machine</li>
-              <li>Load the design and start embroidering!</li>
+              <li>Load the "${mainProductName}" design and start embroidering!</li>
             </ol>
           </div>
 
           <div style="background-color: #e8f5e8; padding: 15px; border-radius: 8px; margin: 20px 0;">
-            <h4 style="color: #4caf50; margin-top: 0;">💡 Tips</h4>
+            <h4 style="color: #4caf50; margin-top: 0;">💡 Tips for Your "${mainProductName}" Design</h4>
             <ul style="color: #2e7d32;">
               <li>Keep backup copies of your design files</li>
               <li>Test the design on a sample fabric first</li>
@@ -411,11 +451,11 @@ const generateDesignFilesHTML = (order, user, productDetails, designFiles) => {
             </ul>
           </div>
 
-          <p>We hope you enjoy creating beautiful embroidery with our designs!</p>
+          <p>We hope you enjoy creating beautiful embroidery with your "${mainProductName}" design!</p>
         </div>
 
         <div class="footer">
-          <p>Happy Embroidering!</p>
+          <p>Happy Embroidering with your "${mainProductName}" design!</p>
           <p>Ganesh Embroidery Team</p>
           <p>© 2025 Ganesh Embroidery. All rights reserved.</p>
         </div>

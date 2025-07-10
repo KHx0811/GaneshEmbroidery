@@ -453,7 +453,20 @@ export const getUserOrders = async (req, res) => {
   try {
     const userId = req.user.userId;
 
+    // Add no-cache headers to ensure fresh data
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
+
     const orders = await Order.find({ userId }).sort({ orderDate: -1 });
+    
+    console.log(`Fetching orders for user ${userId}:`, orders.map(o => ({
+      orderId: o.orderId, 
+      status: o.status, 
+      emailStatus: o.emailStatus
+    })));
 
     if (!orders) {
       return res.status(200).json({

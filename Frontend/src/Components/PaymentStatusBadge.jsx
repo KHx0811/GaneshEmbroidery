@@ -1,5 +1,5 @@
 import React from 'react';
-import { CreditCard, Clock, CheckCircle, X, AlertTriangle, Package } from 'lucide-react';
+import { CreditCard, Clock, CheckCircle, X, AlertTriangle, Package, Mail } from 'lucide-react';
 
 const PaymentStatusBadge = ({ status, size = 'medium' }) => {
   const getStatusConfig = (status) => {
@@ -17,6 +17,13 @@ const PaymentStatusBadge = ({ status, size = 'medium' }) => {
           icon: <CreditCard size={size === 'small' ? 14 : 16} />,
           text: 'Paid',
           bgColor: '#e3f2fd'
+        };
+      case 'sending email':
+        return {
+          color: '#9c27b0',
+          icon: <Mail size={size === 'small' ? 14 : 16} className="processing-animation" />,
+          text: 'Sending Email...',
+          bgColor: '#f3e5f5'
         };
       case 'payment failed':
         return {
