@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Header from '../Components/Header';
 import { isAuthenticated, getAuthToken } from '../utils/auth.js';
-import { ArrowLeft, Package, Calendar, DollarSign, Eye, Download, Clock, CheckCircle, X, CreditCard, AlertTriangle, Mail, MailCheck, MailX } from 'lucide-react';
+import { ArrowLeft, Package, Calendar, DollarSign, Eye, Download, Clock, CheckCircle, X, CreditCard, AlertTriangle, Mail, MailCheck, MailX, RefreshCw } from 'lucide-react';
 import '../styles/animations.css';
 
 const url = import.meta.env.VITE_API_BASE_URL;
@@ -15,6 +15,7 @@ const MyOrdersPage = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all'); // all, pending, mail_sent, cancelled
   const [processingOrderId, setProcessingOrderId] = useState(null);
+  const [retryingEmails, setRetryingEmails] = useState(new Set());
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -31,17 +32,14 @@ const MyOrdersPage = () => {
           alert(`Payment successful! We're sending your confirmation email with design files. Check your inbox shortly.`);
         }, 500);
         
-        // Force refresh orders immediately and multiple times initially
         fetchUserOrders(true);
         setTimeout(() => fetchUserOrders(true), 1000);
         setTimeout(() => fetchUserOrders(true), 2000);
         
-        // Start aggressive polling for order status updates
         const pollInterval = setInterval(() => {
-          fetchUserOrders(true); // Force refresh on each poll
-        }, 2000); // Poll every 2 seconds
+          fetchUserOrders(true);
+        }, 2000);
         
-        // Stop polling after 3 minutes
         const stopPolling = setTimeout(() => {
           clearInterval(pollInterval);
           setProcessingOrderId(null);
@@ -57,7 +55,6 @@ const MyOrdersPage = () => {
       }
     }
     
-    // Handle payment timeout case
     if (location.state?.paymentTimeout && location.state?.orderId) {
       const timer = setTimeout(() => {
         alert(`Payment may have been processed. Please check your order status for Order #${location.state.orderId}. If payment was deducted but order status is not updated, please contact support.`);
@@ -68,7 +65,6 @@ const MyOrdersPage = () => {
       return () => clearTimeout(timer);
     }
     
-    // Handle payment cancelled case
     if (location.state?.paymentCancelled && location.state?.orderId) {
       const timer = setTimeout(() => {
         alert(`Payment was cancelled for Order #${location.state.orderId}. You can try again anytime.`);
@@ -79,7 +75,6 @@ const MyOrdersPage = () => {
       return () => clearTimeout(timer);
     }
     
-    // Handle payment failed case
     if (location.state?.paymentFailed && location.state?.orderId) {
       const timer = setTimeout(() => {
         alert(`Payment failed for Order #${location.state.orderId}: ${location.state.errorMessage || 'Please try again.'}. You can retry payment anytime.`);
@@ -90,7 +85,6 @@ const MyOrdersPage = () => {
       return () => clearTimeout(timer);
     }
     
-    // Handle payment verification failed case
     if (location.state?.paymentVerificationFailed && location.state?.orderId) {
       const timer = setTimeout(() => {
         alert(`${location.state.errorMessage || 'Payment verification failed.'} Please check your order status for Order #${location.state.orderId}.`);
@@ -105,11 +99,9 @@ const MyOrdersPage = () => {
   useEffect(() => {
     filterOrders();
     
-    // Check if processing order status has changed
     if (processingOrderId) {
       const processingOrder = orders.find(order => order.orderId === processingOrderId);
       if (processingOrder) {
-        // Keep processing indicator if status is Pending, Sending Email, or if email is still pending
         if (processingOrder.status === 'Mail Sent' || 
             (processingOrder.status === 'Paid' && processingOrder.emailStatus === 'sent')) {
           setProcessingOrderId(null);
@@ -157,13 +149,55 @@ const MyOrdersPage = () => {
       
       if (response.ok) {
         alert('Confirmation email sent successfully!');
-        fetchUserOrders(); // Refresh orders to update email status
+        fetchUserOrders();
       } else {
         const data = await response.json();
         alert(`Failed to send email: ${data.error || 'Unknown error'}`);
       }
     } catch (error) {
       alert('Failed to send email. Please try again.');
+    }
+  };
+
+  const retryOrderEmail = async (orderId) => {
+    if (retryingEmails.has(orderId)) {
+      alert('Email retry already in progress for this order.');
+      return;
+    }
+
+    setRetryingEmails(prev => new Set([...prev, orderId]));
+
+    try {
+      const token = getAuthToken();
+      const response = await fetch(`${url}/orders/${orderId}/retry-email`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        if (result.alreadySent) {
+          alert('Email was already sent successfully for this order.');
+        } else {
+          alert('Email sent successfully!');
+          fetchUserOrders();
+        }
+      } else {
+        alert(`Failed to send email: ${result.message || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error retrying email:', error);
+      alert('Network error occurred while retrying email');
+    } finally {
+      setRetryingEmails(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(orderId);
+        return newSet;
+      });
     }
   };
 
@@ -186,6 +220,7 @@ const MyOrdersPage = () => {
       case 'sending email': return '#9c27b0';
       case 'payment failed': return '#f44336';
       case 'mail sent': return '#4caf50';
+      case 'email failed': return '#f44336';
       case 'cancelled': return '#f44336';
       default: return '#9e9e9e';
     }
@@ -198,6 +233,7 @@ const MyOrdersPage = () => {
       case 'sending email': return <Mail size={16} className="processing-animation" />;
       case 'payment failed': return <AlertTriangle size={16} />;
       case 'mail sent': return <CheckCircle size={16} />;
+      case 'email failed': return <AlertTriangle size={16} />;
       case 'cancelled': return <X size={16} />;
       default: return <Package size={16} />;
     }
@@ -205,7 +241,14 @@ const MyOrdersPage = () => {
 
   const getStatusText = (status, orderId) => {
     if (status === 'Sending Email') {
+      const processingOrder = orders.find(o => o.orderId === orderId);
+      if (processingOrder && processingOrder.emailStatus === 'failed') {
+        return 'Email Sending Failed';
+      }
       return 'Sending Email... Check your inbox!';
+    }
+    if (status === 'Email Failed') {
+      return 'Email Sending Failed';
     }
     return status;
   };
@@ -221,7 +264,7 @@ const MyOrdersPage = () => {
       } else if (order.emailStatus === 'failed') {
         return {
           icon: <MailX size={14} />,
-          text: 'Email sending failed',
+          text: 'Email sending failed - Retry available',
           color: '#f44336'
         };
       } else if (order.emailStatus === 'pending') {
@@ -230,7 +273,27 @@ const MyOrdersPage = () => {
           text: 'Sending confirmation email...',
           color: '#ff9800'
         };
+      } else if (order.emailStatus === 'retrying') {
+        return {
+          icon: <Mail size={14} className="processing-animation" />,
+          text: 'Retrying email send...',
+          color: '#ff9800'
+        };
       }
+    }
+    if (order.status === 'Email Failed' || order.emailStatus === 'failed') {
+      return {
+        icon: <MailX size={14} />,
+        text: 'Email sending failed - Retry available',
+        color: '#f44336'
+      };
+    }
+    if (order.status === 'Sending Email' && order.emailStatus === 'failed') {
+      return {
+        icon: <MailX size={14} />,
+        text: 'Email sending failed - Retry available',
+        color: '#f44336'
+      };
     }
     return null;
   };
@@ -335,6 +398,19 @@ const MyOrdersPage = () => {
     fontSize: '14px'
   };
 
+  const hasFailedEmailStatus = (order) => {
+    return (
+      order.status === 'Email Failed' ||
+      order.emailStatus === 'failed' ||
+      (order.status === 'Sending Email' && order.emailStatus === 'failed') ||
+      (order.status === 'Paid' && order.emailStatus === 'failed')
+    );
+  };
+
+  const shouldShowRetryButton = (order) => {
+    return hasFailedEmailStatus(order) && order.status !== 'Mail Sent';
+  };
+
   if (loading) {
     return (
       <div style={mainContainerStyle}>
@@ -388,7 +464,7 @@ const MyOrdersPage = () => {
             onMouseEnter={(e) => e.target.style.transform = 'translateY(-2px)'}
             onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
           >
-            🔄 Refresh
+            Refresh
           </button>
           {processingOrderId && (
             <div style={{
@@ -455,6 +531,12 @@ const MyOrdersPage = () => {
           Payment Failed
         </button>
         <button
+          style={filter === 'email_failed' ? activeFilterStyle : filterButtonStyle}
+          onClick={() => setFilter('email_failed')}
+        >
+          Email Failed
+        </button>
+        <button
           style={filter === 'mail_sent' ? activeFilterStyle : filterButtonStyle}
           onClick={() => setFilter('mail_sent')}
         >
@@ -472,13 +554,20 @@ const MyOrdersPage = () => {
         {filteredOrders.map((order) => (
           <div
             key={order._id}
-            className={order.status === 'Sending Email' ? 'mail-processing-card' : ''}
+            className={
+              order.status === 'Sending Email' && order.emailStatus !== 'failed' ? 'mail-processing-card' :
+              hasFailedEmailStatus(order) ? 'email-failed-card' : ''
+            }
             style={{
               ...orderCardStyle,
-              ...(order.status === 'Sending Email' ? {
+              ...(order.status === 'Sending Email' && order.emailStatus !== 'failed' ? {
                 border: '2px solid #9c27b0',
                 background: 'linear-gradient(135deg, #f3e5f5 0%, #ffffff 100%)',
                 boxShadow: '0 4px 15px rgba(156, 39, 176, 0.2)'
+              } : hasFailedEmailStatus(order) ? {
+                border: '2px solid #f44336',
+                background: 'linear-gradient(135deg, #ffebee 0%, #ffffff 100%)',
+                boxShadow: '0 4px 15px rgba(244, 67, 54, 0.2)'
               } : {})
             }}
             onMouseEnter={(e) => e.target.style.transform = 'translateY(-3px)'}
@@ -496,7 +585,9 @@ const MyOrdersPage = () => {
                   {getStatusIcon(order.status)}
                   {getStatusText(order.status, order.orderId)}
                 </div>
-                {order.status === 'Sending Email' && (
+                {order.status === 'Sending Email' && 
+                 order.emailStatus !== 'failed' && 
+                 order.emailStatus !== 'retrying' && (
                   <div className="mail-processing-indicator">
                     <div className="processing-spinner" style={{
                       width: '16px',
@@ -506,6 +597,37 @@ const MyOrdersPage = () => {
                       borderRadius: '50%'
                     }}></div>
                     <span>Processing your design files...</span>
+                  </div>
+                )}
+                {order.emailStatus === 'retrying' && (
+                  <div className="mail-processing-indicator" style={{
+                    background: 'rgba(255, 152, 0, 0.1)',
+                    color: '#ff9800'
+                  }}>
+                    <div className="processing-spinner" style={{
+                      width: '16px',
+                      height: '16px',
+                      border: '2px solid #ff9800',
+                      borderTop: '2px solid transparent',
+                      borderRadius: '50%'
+                    }}></div>
+                    <span>Retrying email send...</span>
+                  </div>
+                )}
+                {hasFailedEmailStatus(order) && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginTop: '10px',
+                    padding: '8px 12px',
+                    background: 'rgba(244, 67, 54, 0.1)',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    color: '#f44336'
+                  }}>
+                    <MailX size={16} />
+                    <span>Email sending failed - Retry available</span>
                   </div>
                 )}
                 {getEmailStatusInfo(order) && (
@@ -614,13 +736,31 @@ const MyOrdersPage = () => {
                     Download Files
                   </button>
                 )}
-                {(order.status === 'Paid' && order.emailStatus === 'failed') && (
+                {/* Show retry button for all email failure scenarios */}
+                {shouldShowRetryButton(order) && (
                   <button
-                    style={{ ...actionButtonStyle, background: '#ff5722', color: 'white', border: 'none' }}
-                    onClick={() => resendConfirmationEmail(order.orderId)}
+                    style={{ 
+                      ...actionButtonStyle, 
+                      background: retryingEmails.has(order.orderId) ? '#ccc' : '#ff5722', 
+                      color: 'white', 
+                      border: 'none',
+                      opacity: retryingEmails.has(order.orderId) ? 0.6 : 1,
+                      cursor: retryingEmails.has(order.orderId) ? 'not-allowed' : 'pointer'
+                    }}
+                    onClick={() => retryOrderEmail(order.orderId)}
+                    disabled={retryingEmails.has(order.orderId)}
                   >
-                    <MailX size={16} style={{ verticalAlign: 'middle', marginRight: '5px' }} />
-                    Resend Email
+                    {retryingEmails.has(order.orderId) ? (
+                      <>
+                        <RefreshCw size={16} style={{ verticalAlign: 'middle', marginRight: '5px', animation: 'spin 1s linear infinite' }} />
+                        Retrying...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw size={16} style={{ verticalAlign: 'middle', marginRight: '5px' }} />
+                        Retry Email
+                      </>
+                    )}
                   </button>
                 )}
               </div>

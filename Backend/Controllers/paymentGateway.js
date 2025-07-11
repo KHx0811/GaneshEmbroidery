@@ -41,10 +41,8 @@ export const createPaymentOrder = async (req, res) => {
             });
         }
 
-        // Check if payment already exists for this order
         let existingPayment = await Payment.findOne({ orderId });
         
-        // If payment exists and is already successful, don't create new payment
         if (existingPayment && (existingPayment.status === 'captured' || existingPayment.status === 'authorized')) {
             return res.status(400).json({
                 success: false,
@@ -55,7 +53,7 @@ export const createPaymentOrder = async (req, res) => {
         const receipt = `receipt_${orderId}_${Date.now()}`;
 
         const options = {
-            amount: Math.round(amount * 100), // Amount in paise
+            amount: Math.round(amount * 100),
             currency: currency,
             receipt: receipt,
             notes: {
@@ -68,15 +66,14 @@ export const createPaymentOrder = async (req, res) => {
 
         const razorpayOrder = await razorpay.orders.create(options);
 
-        // If payment record exists but failed/pending, update it instead of creating new
         if (existingPayment) {
             existingPayment.razorpayOrderId = razorpayOrder.id;
             existingPayment.amount = amount;
             existingPayment.currency = currency;
             existingPayment.receipt = receipt;
             existingPayment.status = 'created';
-            existingPayment.razorpayPaymentId = null; // Reset previous payment ID
-            existingPayment.razorpaySignature = null; // Reset previous signature
+            existingPayment.razorpayPaymentId = null;
+            existingPayment.razorpaySignature = null;
             existingPayment.userDetails = {
                 email: user.email,
                 contact: user.phone || '',
@@ -99,7 +96,6 @@ export const createPaymentOrder = async (req, res) => {
                 key: razorpay_key_id
             });
         } else {
-            // Create new payment record
             const payment = new Payment({
                 userId: userId,
                 orderId: orderId,
@@ -179,7 +175,6 @@ export const verifyPayment = async (req, res) => {
             });
         }
         
-        // Check if payment is already processed
         if (payment.status === 'captured' && payment.razorpayPaymentId) {
             console.log(`Payment ${paymentId} already processed, skipping duplicate processing`);
             return res.status(200).json({
@@ -208,7 +203,6 @@ export const verifyPayment = async (req, res) => {
 
             await payment.save();
 
-            // Check current order status to avoid going backwards
             const currentOrder = await Order.findOne({ orderId: payment.orderId });
             if (currentOrder.status === 'Mail Sent') {
                 console.log(`Order ${payment.orderId} already completed, not updating status`);
@@ -241,7 +235,6 @@ export const verifyPayment = async (req, res) => {
             payment.paidAt = new Date();
             await payment.save();
 
-            // Check current order status to avoid going backwards
             const currentOrder = await Order.findOne({ orderId: payment.orderId });
             if (currentOrder.status === 'Mail Sent') {
                 console.log(`Order ${payment.orderId} already completed (fallback), not updating status`);
@@ -267,15 +260,12 @@ export const verifyPayment = async (req, res) => {
             console.log(`Order ${payment.orderId} status updated (fallback) to:`, orderUpdate.status, orderUpdate.emailStatus);
         }
 
-        // Send payment confirmation email after successful payment
         try {
             console.log(`Sending payment confirmation email for order: ${payment.orderId}`);
             await sendPaymentConfirmationEmail(payment.orderId);
             console.log(`Payment confirmation email sent successfully for order: ${payment.orderId}`);
         } catch (emailError) {
             console.error(`Error sending payment confirmation email for order ${payment.orderId}:`, emailError);
-            // Don't fail the payment verification if email fails
-            // Email status is already updated in the sendPaymentConfirmationEmail function
         }
 
         res.status(200).json({

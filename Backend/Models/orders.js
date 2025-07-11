@@ -53,7 +53,7 @@ const orderSchema = new Schema({
     },
     status: {
         type: String,
-        enum: ['Pending', 'Paid', 'Sending Email', 'Payment Failed', 'Mail Sent', 'Cancelled'],
+        enum: ['Pending', 'Paid', 'Sending Email', 'Payment Failed', 'Mail Sent', 'Email Failed', 'Cancelled'],
         default: 'Pending'
     },
     paymentId: {
@@ -84,12 +84,24 @@ const orderSchema = new Schema({
     },
     emailStatus: {
         type: String,
-        enum: ['pending', 'sent', 'failed'],
+        enum: ['pending', 'sent', 'failed', 'retrying'],
         default: 'pending'
     },
     emailError: {
         type: String,
         default: null
+    },
+    lastRetryAt: {
+        type: Date,
+        default: null
+    },
+    lastFailedAt: {
+        type: Date,
+        default: null
+    },
+    retryCount: {
+        type: Number,
+        default: 0
     },
     designFilesEmailSent: {
         type: Boolean,

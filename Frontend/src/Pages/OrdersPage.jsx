@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../Components/Header';
 import { isAuthenticated, getAuthToken, getUserRole } from '../utils/auth.js';
-import { ArrowLeft, Package, Calendar, User, DollarSign, Eye, Edit, Filter } from 'lucide-react';
+import { ArrowLeft, Package, Calendar, User, DollarSign, Eye, Edit, Filter, RefreshCw, Mail } from 'lucide-react';
 
 const url = import.meta.env.VITE_API_BASE_URL;
 
@@ -13,6 +13,12 @@ const OrdersPage = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all'); // all, pending, mail_sent, cancelled
   const [searchTerm, setSearchTerm] = useState('');
+  const [debugModal, setDebugModal] = useState({
+    isOpen: false,
+    logs: [],
+    title: ''
+  });
+  const [retryingOrders, setRetryingOrders] = useState(new Set());
 
   useEffect(() => {
     if (!isAuthenticated() || getUserRole() !== 'admin') {
@@ -57,9 +63,16 @@ const OrdersPage = () => {
     let filtered = [...orders];
 
     if (filter !== 'all') {
-      filtered = filtered.filter(order => 
-        order.status.toLowerCase().replace(' ', '_') === filter
-      );
+      if (filter === 'email_failed') {
+        filtered = filtered.filter(order => 
+          order.status.toLowerCase() === 'email failed' || 
+          order.emailStatus === 'failed'
+        );
+      } else {
+        filtered = filtered.filter(order => 
+          order.status.toLowerCase().replace(' ', '_') === filter
+        );
+      }
     }
 
     if (searchTerm) {
@@ -100,11 +113,93 @@ const OrdersPage = () => {
     }
   };
 
+  const retryOrderEmail = async (orderId) => {
+    if (retryingOrders.has(orderId)) {
+      alert('Email retry already in progress for this order.');
+      return;
+    }
+
+    setRetryingOrders(prev => new Set([...prev, orderId]));
+
+    try {
+      const token = getAuthToken();
+      const response = await fetch(`${url}/orders/${orderId}/retry-email`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        setDebugModal({
+          isOpen: true,
+          logs: result.debugLog || [],
+          title: `Email Retry Success - Order ${orderId}`
+        });
+
+        if (result.alreadySent) {
+          alert('Email was already sent successfully for this order.');
+        } else {
+          alert('Email sent successfully!');
+          fetchOrders();
+        }
+      } else {
+        setDebugModal({
+          isOpen: true,
+          logs: result.debugLog || [`Error: ${result.message || 'Unknown error'}`],
+          title: `Email Retry Failed - Order ${orderId}`
+        });
+        alert(`Failed to send email: ${result.message || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error retrying email:', error);
+      setDebugModal({
+        isOpen: true,
+        logs: [`Network Error: ${error.message}`],
+        title: `Email Retry Error - Order ${orderId}`
+      });
+      alert('Network error occurred while retrying email');
+    } finally {
+      setRetryingOrders(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(orderId);
+        return newSet;
+      });
+    }
+  };
+
+  const shouldShowRetryButton = (order) => {
+    
+    if (order.status === 'Cancelled') {
+      return false;
+    }
+    
+    if (order.emailStatus === 'sent' && order.emailSent === true) {
+      return false;
+    }
+    
+    const shouldShow = (
+      order.emailStatus === 'failed' || 
+      order.emailStatus === 'pending' || 
+      order.emailStatus === 'retrying' ||
+      order.status === 'Email Failed' ||
+      order.status === 'Sending Email' ||
+      (order.status === 'Pending' && !order.emailSent)
+    );
+    
+    return shouldShow;
+  };
+
   const getStatusColor = (status) => {
     switch (status.toLowerCase()) {
       case 'pending': return '#ff9800';
       case 'mail sent': return '#4caf50';
       case 'cancelled': return '#f44336';
+      case 'email failed': return '#f44336';
+      case 'sending email': return '#2196f3';
       default: return '#2196f3';
     }
   };
@@ -114,8 +209,29 @@ const OrdersPage = () => {
       case 'pending': return '⏳';
       case 'mail sent': return '✅';
       case 'cancelled': return '❌';
+      case 'email failed': return '❌';
+      case 'sending email': return '📧';
       default: return '📦';
     }
+  };
+
+  const getEmailStatusColor = (order) => {
+    if (order.emailSent && order.emailStatus === 'sent') return '#4caf50'; // Green - Success
+    if (order.emailStatus === 'failed') return '#f44336'; // Red - Failed
+    if (order.emailStatus === 'retrying') return '#ff9800'; // Orange - Retrying
+    if (order.emailStatus === 'pending' || !order.emailSent) return '#9e9e9e'; // Gray - Pending
+    return '#2196f3'; // Blue - Unknown
+  };
+
+  const getEmailStatusText = (order) => {
+    if (order.emailSent && order.emailStatus === 'sent') return '📧 Sent';
+    if (order.emailStatus === 'failed') return '❌ Failed';
+    if (order.emailStatus === 'retrying') return '🔄 Retrying';
+    if (order.emailStatus === 'pending') return '⏳ Pending';
+    if (order.status === 'Email Failed') return '❌ Failed';
+    if (order.status === 'Sending Email') return '📧 Sending';
+    if (!order.emailSent) return '⏳ Not Sent';
+    return '❓ Unknown';
   };
 
   const mainContainerStyle = {
@@ -296,6 +412,12 @@ const OrdersPage = () => {
         >
           Cancelled
         </button>
+        <button
+          style={filter === 'email_failed' ? activeFilterStyle : filterButtonStyle}
+          onClick={() => setFilter('email_failed')}
+        >
+          Email Failed
+        </button>
 
         <input
           type="text"
@@ -319,9 +441,21 @@ const OrdersPage = () => {
                 <h3 style={{ margin: '0 0 10px 0', color: '#021d3b', fontSize: '1.3rem' }}>
                   Order #{order.orderId}
                 </h3>
-                <div style={statusBadgeStyle(order.status)}>
-                  {getStatusIcon(order.status)}
-                  {order.status}
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <div style={statusBadgeStyle(order.status)}>
+                    {getStatusIcon(order.status)}
+                    {order.status}
+                  </div>
+                  <div style={{
+                    padding: '5px 10px',
+                    borderRadius: '15px',
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    backgroundColor: getEmailStatusColor(order),
+                    color: 'white'
+                  }}>
+                    {getEmailStatusText(order)}
+                  </div>
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -331,6 +465,11 @@ const OrdersPage = () => {
                 <div style={{ fontSize: '14px', color: '#666' }}>
                   {new Date(order.orderDate).toLocaleDateString()}
                 </div>
+                {order.retryCount > 0 && (
+                  <div style={{ fontSize: '12px', color: '#ff9800', marginTop: '5px' }}>
+                    Retries: {order.retryCount}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -382,6 +521,33 @@ const OrdersPage = () => {
                   <Edit size={16} style={{ verticalAlign: 'middle', marginRight: '5px' }} />
                   Edit
                 </button>
+                
+                {shouldShowRetryButton(order) && (
+                  <button
+                    style={{
+                      ...actionButtonStyle,
+                      background: retryingOrders.has(order.orderId) ? '#ccc' : 'linear-gradient(135deg, #E91E63, #F06292)',
+                      color: 'white',
+                      border: 'none',
+                      opacity: retryingOrders.has(order.orderId) ? 0.6 : 1,
+                      cursor: retryingOrders.has(order.orderId) ? 'not-allowed' : 'pointer'
+                    }}
+                    onClick={() => retryOrderEmail(order.orderId)}
+                    disabled={retryingOrders.has(order.orderId)}
+                  >
+                    {retryingOrders.has(order.orderId) ? (
+                      <>
+                        <RefreshCw size={16} style={{ verticalAlign: 'middle', marginRight: '5px', animation: 'spin 1s linear infinite' }} />
+                        Retrying...
+                      </>
+                    ) : (
+                      <>
+                        <Mail size={16} style={{ verticalAlign: 'middle', marginRight: '5px' }} />
+                        Retry Email
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
 
               <div style={{ display: 'flex', gap: '10px' }}>
@@ -430,6 +596,13 @@ const OrdersPage = () => {
           </div>
         </div>
       )}
+
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 };

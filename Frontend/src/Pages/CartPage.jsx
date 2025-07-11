@@ -135,7 +135,7 @@ const CartPage = () => {
   const getSelectedTotal = () => {
     return cartItems
       .filter(item => selectedItems.has(item._id))
-      .reduce((total, item) => total + (item.price * item.quantity), 0);
+      .reduce((total, item) => total + (item.totalPrice || (item.price * item.quantity)), 0);
   };
 
   const getSelectedCount = () => {
@@ -167,11 +167,18 @@ const CartPage = () => {
 
       if (response.ok) {
         const data = await response.json();
-        alert('Order placed successfully!');
         // Remove checked out items from cart
         setCartItems(prevItems => prevItems.filter(item => !selectedItems.has(item._id)));
         setSelectedItems(new Set());
-        navigate('/my-orders');
+        // Redirect to payment page with order details
+        navigate('/payment', { 
+          state: {
+            orderId: data.order.orderId,
+            totalAmount: data.order.totalAmount,
+            products: data.order.products,
+            status: data.order.status
+          }
+        });
       } else {
         console.error('Failed to place order');
         alert('Failed to place order. Please try again.');
@@ -453,7 +460,7 @@ const CartPage = () => {
                 <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '100%' }}>
                   <div>
                     <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#4caf50', marginBottom: '5px' }}>
-                      ₹{item.price * item.quantity}
+                      ₹{item.totalPrice || (item.price * item.quantity)}
                     </div>
                     <div style={{ fontSize: '14px', color: '#999' }}>
                       ₹{item.price} each
@@ -520,7 +527,7 @@ const CartPage = () => {
               onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
             >
               <CreditCard size={20} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
-              {isCheckingOut ? 'Processing...' : `Checkout (${selectedItems.size} items)`}
+              {isCheckingOut ? 'Processing...' : `Proceed to Payment (${selectedItems.size} items)`}
             </button>
             
             <div style={{ textAlign: 'center', marginTop: '15px', fontSize: '14px', color: '#666' }}>

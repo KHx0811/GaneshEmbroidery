@@ -346,10 +346,8 @@ export const addToWishlist = async (req, res) => {
       });
     }
 
-    // Add new item to wishlist
     user.wishlist.push({ productId });
     
-    // Clean up any existing cart items with invalid totalPrice before saving
     user.cart.forEach((item) => {
       if (item.totalPrice === undefined || item.totalPrice === null || isNaN(item.totalPrice)) {
         item.totalPrice = 0;
@@ -388,10 +386,8 @@ export const getWishlist = async (req, res) => {
       });
     }
 
-    // Filter out any wishlist items where product no longer exists
     const validWishlistItems = user.wishlist.filter(item => item.productId);
 
-    // Format wishlist items for frontend
     const wishlistItems = validWishlistItems.map(item => ({
       _id: item._id,
       productId: item.productId._id,
@@ -432,7 +428,6 @@ export const removeFromWishlist = async (req, res) => {
       });
     }
 
-    // Filter out the item to remove
     user.wishlist = user.wishlist.filter(item => item._id.toString() !== wishlistItemId);
     await user.save();
 
@@ -462,11 +457,11 @@ export const getUserOrders = async (req, res) => {
 
     const orders = await Order.find({ userId }).sort({ orderDate: -1 });
     
-    console.log(`Fetching orders for user ${userId}:`, orders.map(o => ({
-      orderId: o.orderId, 
-      status: o.status, 
-      emailStatus: o.emailStatus
-    })));
+    const emailStatusSummary = orders.reduce((acc, order) => {
+      acc[order.emailStatus] = (acc[order.emailStatus] || 0) + 1;
+      return acc;
+    }, {});
+    console.log(`Email status summary for user ${userId}:`, emailStatusSummary);
 
     if (!orders) {
       return res.status(200).json({
@@ -508,10 +503,8 @@ export const checkout = async (req, res) => {
       });
     }
 
-    // Generate unique order ID
     const orderId = await generateUniqueOrderId();
 
-    // Populate product details for each item
     const orderProducts = [];
     let totalAmount = 0;
 
@@ -524,19 +517,36 @@ export const checkout = async (req, res) => {
         });
       }
 
-      const productOrderItem = {
-        productId: product._id.toString(),
-        productName: product.product_name,
-        machine_type: item.machineType,
-        price: product.price,
-        quantity: item.quantity || 1
-      };
+      // Handle multiple machine types per cart item
+      if (item.machineTypes && Array.isArray(item.machineTypes)) {
+        // Create separate order items for each machine type
+        for (const machineType of item.machineTypes) {
+          const productOrderItem = {
+            productId: product._id.toString(),
+            productName: product.product_name,
+            machine_type: machineType.type,
+            price: machineType.price,
+            quantity: item.quantity || 1
+          };
 
-      orderProducts.push(productOrderItem);
-      totalAmount += product.price * (item.quantity || 1);
+          orderProducts.push(productOrderItem);
+          totalAmount += machineType.price * (item.quantity || 1);
+        }
+      } else {
+        // Fallback for items with single machine type (legacy support)
+        const productOrderItem = {
+          productId: product._id.toString(),
+          productName: product.product_name,
+          machine_type: item.machineType || item.machine_type,
+          price: item.price || product.price,
+          quantity: item.quantity || 1
+        };
+
+        orderProducts.push(productOrderItem);
+        totalAmount += (item.price || product.price) * (item.quantity || 1);
+      }
     }
 
-    // Create new order
     const newOrder = new Order({
       orderId,
       userId: userId,
@@ -547,7 +557,6 @@ export const checkout = async (req, res) => {
 
     await newOrder.save();
 
-    // Remove checked out items from user's cart
     const itemIds = items.map(item => item._id);
     user.cart = user.cart.filter(cartItem => !itemIds.includes(cartItem._id.toString()));
     await user.save();
@@ -560,7 +569,6 @@ export const checkout = async (req, res) => {
   } catch (error) {
     console.error('Error during checkout:', error);
     
-    // Handle duplicate key error specifically
     const errorResponse = handleDuplicateKeyError(error, 'checkout');
     if (errorResponse.errorType !== 'GENERAL_ERROR') {
       return res.status(400).json(errorResponse);
@@ -601,10 +609,8 @@ export const buyNow = async (req, res) => {
       });
     }
 
-    // Generate unique order ID
     const orderId = await generateUniqueOrderId();
 
-    // Create order products with machine types
     const orderProducts = machineTypes.map(machineType => ({
       productId: product._id.toString(),
       productName: product.product_name,
@@ -615,7 +621,6 @@ export const buyNow = async (req, res) => {
 
     const finalTotalAmount = totalPrice || machineTypes.reduce((total, type) => total + type.price, 0) * quantity;
 
-    // Create new order directly (Buy Now)
     const newOrder = new Order({
       orderId,
       userId: userId,
@@ -639,7 +644,6 @@ export const buyNow = async (req, res) => {
   } catch (error) {
     console.error('Error during buy now:', error);
     
-    // Handle duplicate key error specifically
     const errorResponse = handleDuplicateKeyError(error, 'buy now');
     if (errorResponse.errorType !== 'GENERAL_ERROR') {
       return res.status(400).json(errorResponse);

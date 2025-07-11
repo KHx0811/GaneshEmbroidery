@@ -5,6 +5,7 @@ import routes from './Routes/index.js';
 import { ConnectToDB } from './Services/database.js';
 import passport from 'passport';
 import session from 'express-session';
+import MongoStore from 'connect-mongo';
 
 const { port, client_url } = config;
 const app = express();
@@ -51,6 +52,11 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'ItsSecret', 
   resave: false, 
   saveUninitialized: false,
+  store: MongoStore.create({
+    mongoUrl: process.env.DB_CONNECTION_STRING || 'mongodb://localhost:27017/sl_designers',
+    ttl: 24 * 60 * 60,
+    touchAfter: 24 * 3600
+  }),
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     maxAge: 24 * 60 * 60 * 1000,
@@ -71,6 +77,7 @@ app.use("/", routes);
 const startServer = async () => {
     try {
         await ConnectToDB();
+        
         app.listen(port, () => {
             console.log(`Server is running on port ${port}`);
         });

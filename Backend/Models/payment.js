@@ -91,7 +91,6 @@ const paymentSchema = new Schema({
 });
 
 paymentSchema.index({ userId: 1, orderId: 1 });
-paymentSchema.index({ razorpayOrderId: 1 });
 paymentSchema.index({ razorpayPaymentId: 1 });
 
 const Payment = model('Payment', paymentSchema);

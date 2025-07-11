@@ -214,3 +214,62 @@ export const getOrdersStats = async (req, res) => {
         res.status(500).json({ success: false, error: 'Internal Server Error' });
     }
 };
+
+export const retryOrderEmail = async (req, res) => {
+    try {
+        const { id: orderId } = req.params;
+        
+        const order = await Order.findOne({ orderId });
+        if (!order) {
+            return res.status(404).json({
+                success: false,
+                error: 'Order not found'
+            });
+        }
+
+        if (order.status !== 'Email Failed' && 
+            order.emailStatus !== 'failed' && 
+            !(order.status === 'Paid' && order.emailStatus === 'failed') &&
+            !(order.status === 'Sending Email' && order.emailStatus === 'failed')) {
+            return res.status(400).json({
+                success: false,
+                error: 'Order email status does not require retry',
+                debugLog: [
+                    `Order status: ${order.status}`,
+                    `Email status: ${order.emailStatus}`,
+                    `Retry not needed for this order state`
+                ]
+            });
+        }
+
+        const { retryPaymentConfirmationEmail } = await import('./mailOperations.js');
+        
+        const result = await retryPaymentConfirmationEmail(orderId);
+        
+        if (result.success) {
+            return res.status(200).json({
+                success: true,
+                message: 'Email sent successfully',
+                debugLog: result.debugLog,
+                alreadySent: result.messageId === 'already_sent'
+            });
+        } else {
+            return res.status(500).json({
+                success: false,
+                message: result.error,
+                debugLog: result.debugLog
+            });
+        }
+
+    } catch (error) {
+        console.error('Error retrying order email:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Internal Server Error',
+            debugLog: [
+                `Server Error: ${error.message}`,
+                `Error time: ${new Date().toLocaleString()}`
+            ]
+        });
+    }
+};

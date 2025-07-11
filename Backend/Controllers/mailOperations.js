@@ -67,7 +67,7 @@ export const sendPaymentConfirmationEmail = async (orderId, fromEmail = null) =>
       throw new Error('User not found');
     }
 
-    const dynamicFromEmail = fromEmail || gmail_user_email || 'ganeshembroidery99@gmail.com';
+    const dynamicFromEmail = fromEmail || gmail_user_email || 'ganeshembroidery0@gmail.com';
 
     const productDetails = await Promise.all(
       order.products.map(async (product) => {
@@ -129,7 +129,6 @@ export const sendPaymentConfirmationEmail = async (orderId, fromEmail = null) =>
 
     const emailContent = generatePaymentConfirmationHTML(order, user, productDetails, designFilesAttachments.length > 0);
     
-    // Generate subject with unique product names
     const uniqueProductNames = [...new Set(productDetails.map(p => p.productName))];
     const productNames = uniqueProductNames.join(', ');
     const subjectLine = productNames.length > 50 ? 
@@ -158,6 +157,7 @@ export const sendPaymentConfirmationEmail = async (orderId, fromEmail = null) =>
       }
     );
 
+    console.log(`✅ Email sent successfully for order ${orderId} - Status: ${designFilesAttachments.length > 0 ? 'Mail Sent' : 'Paid'}`);
     return { success: true, messageId: result.messageId };
 
   } catch (error) {
@@ -174,10 +174,13 @@ export const sendPaymentConfirmationEmail = async (orderId, fromEmail = null) =>
       { 
         emailSent: false,
         emailStatus: 'failed',
-        emailError: error.message
+        emailError: error.message,
+        lastFailedAt: new Date(),
+        status: 'Email Failed'
       }
     );
 
+    console.log(`❌ Email failed for order ${orderId} - Error: ${error.message}`);
     throw error;
   }
 };
@@ -194,7 +197,7 @@ export const sendDesignFilesEmail = async (orderId, designFiles, fromEmail = nul
       throw new Error('User not found');
     }
 
-    const dynamicFromEmail = fromEmail || gmail_user_email || 'ganeshembroidery99@gmail.com';
+    const dynamicFromEmail = fromEmail || gmail_user_email || 'ganeshembroidery0@gmail.com';
 
     const productDetails = await Promise.all(
       order.products.map(async (product) => {
@@ -208,7 +211,6 @@ export const sendDesignFilesEmail = async (orderId, designFiles, fromEmail = nul
 
     const emailContent = generateDesignFilesHTML(order, user, productDetails, designFiles);
     
-    // Generate subject with unique product names
     const uniqueProductNames = [...new Set(productDetails.map(p => p.productName))];
     const productNames = uniqueProductNames.join(', ');
     const subjectLine = productNames.length > 50 ? 
@@ -507,7 +509,7 @@ const getDesignFileInfo = (product, machineType) => {
 
 export const sendTestEmail = async (email, fromEmail = null) => {
   try {
-    const dynamicFromEmail = fromEmail || gmail_user_email || 'ganeshembroidery99@gmail.com';
+    const dynamicFromEmail = fromEmail || gmail_user_email || 'ganeshembroidery0@gmail.com';
     console.log(`Sending test email from: ${dynamicFromEmail} to: ${email}`);
 
     const transporter = await createTransporter();
@@ -565,6 +567,62 @@ export const testGmailConfig = async () => {
     return {
       success: false,
       error: error.message
+    };
+  }
+};
+
+export const retryPaymentConfirmationEmail = async (orderId, fromEmail = null) => {
+  try {
+    const order = await Order.findOne({ orderId }).lean();
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    await Order.findOneAndUpdate(
+      { orderId },
+      { 
+        emailStatus: 'retrying',
+        lastRetryAt: new Date(),
+        emailError: null
+      }
+    );
+
+    const result = await sendPaymentConfirmationEmail(orderId, fromEmail);
+    
+    console.log(`Email retry successful for order ${orderId}`);
+    return { 
+      success: true, 
+      messageId: result.messageId,
+      debugLog: [
+        `Order found: ${orderId}`,
+        `Attempting to retry email send...`,
+        `Email sent successfully!`,
+        `Message ID: ${result.messageId}`
+      ]
+    };
+
+  } catch (error) {
+    console.error('Error retrying payment confirmation email:', error);
+    
+    await Order.findOneAndUpdate(
+      { orderId },
+      { 
+        emailStatus: 'failed',
+        emailError: error.message,
+        lastFailedAt: new Date()
+      }
+    );
+
+    console.log(`🔄 Email retry failed for order ${orderId} - Error: ${error.message}`);
+    return {
+      success: false,
+      error: error.message,
+      debugLog: [
+        `Order found: ${orderId}`,
+        `Attempting to retry email send...`,
+        `Failed to send email: ${error.message}`,
+        `Retry time: ${new Date().toLocaleString()}`
+      ]
     };
   }
 };

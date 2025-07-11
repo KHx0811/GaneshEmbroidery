@@ -76,6 +76,29 @@ const AdminHomePage = () => {
     }
   };
 
+  const handleFixStuckEmails = async () => {
+    try {
+      const token = getAuthToken();
+      const response = await fetch(`${url}/api/orders/fix-stuck-emails`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        alert(`Fixed stuck email orders!\nFixed: ${result.data.fixed} orders\nOrders: ${result.data.orders.join(', ') || 'None'}`);
+      } else {
+        throw new Error('Failed to fix stuck emails');
+      }
+    } catch (error) {
+      console.error('Error fixing stuck emails:', error);
+      alert('Failed to fix stuck emails. Please try again.');
+    }
+  };
+
   useEffect(() => {
     if (!isAuthenticated()) {
       window.location.href = '/login';
@@ -457,6 +480,40 @@ const AdminHomePage = () => {
                 onClick={() => navigate('/admin/pending-orders')}
               >
                 Pending Support
+              </button>
+            </div>
+          </div>
+
+          <div 
+            style={adminCardStyle}
+            onMouseEnter={(e) => {
+              e.target.style.transform = 'translateY(-10px)';
+              e.target.style.boxShadow = '0 20px 40px rgba(0, 0, 0, 0.15)';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.transform = 'translateY(0)';
+              e.target.style.boxShadow = '0 10px 30px rgba(0, 0, 0, 0.1)';
+            }}
+          >
+            <div style={{ ...iconStyle, color: '#E91E63' }}>📧</div>
+            <h3 style={{ fontSize: '1.8rem', marginBottom: '15px', color: '#021d3b' }}>
+              Email Management
+            </h3>
+            <p style={{ fontSize: '14px', color: '#666', marginBottom: '25px' }}>
+              Monitor and manage email delivery for orders. Use per-order retry in Orders page.
+            </p>
+            <div style={quickActionsStyle}>
+              <button 
+                style={actionButtonStyle}
+                onClick={() => navigate('/admin/orders')}
+              >
+                Manage Order Emails
+              </button>
+              <button 
+                style={actionButtonStyle}
+                onClick={handleFixStuckEmails}
+              >
+                Fix Stuck Emails
               </button>
             </div>
           </div>
