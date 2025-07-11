@@ -6,6 +6,7 @@ export default{
     mongo_uri: process.env.MONGO_URI,
     port: process.env.PORT || 5000,
     jwt_secret: process.env.JWT_SECRET,
+    session_secret: process.env.SESSION_SECRET,
 
     google_oauth_client_id: process.env.GOOGLE_OAUTH_CLIENT_ID,
     google_oauth_client_secret: process.env.GOOGLE_OAUTH_CLIENT_SECRET,

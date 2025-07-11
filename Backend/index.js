@@ -7,7 +7,7 @@ import passport from 'passport';
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
 
-const { port, client_url } = config;
+const { port, client_url, mongo_uri, session_secret } = config;
 const app = express();
 
 app.use(cors({
@@ -49,11 +49,11 @@ app.use('/uploads', express.static('uploads'));
 app.use('/images', express.static('images'));
 
 app.use(session({ 
-  secret: process.env.SESSION_SECRET || 'ItsSecret', 
+  secret: session_secret, 
   resave: false, 
   saveUninitialized: false,
   store: MongoStore.create({
-    mongoUrl: process.env.DB_CONNECTION_STRING || 'mongodb://localhost:27017/sl_designers',
+    mongoUrl: mongo_uri ,
     ttl: 24 * 60 * 60,
     touchAfter: 24 * 3600
   }),
@@ -90,5 +90,4 @@ const startServer = async () => {
 startServer();
 
 export default app;
-
 
