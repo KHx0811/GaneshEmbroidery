@@ -28,4 +28,7 @@ export default{
     
     razorpay_key_id: process.env.RAZORPAY_KEY_ID,
     razorpay_key_secret: process.env.RAZORPAY_KEY_SECRET,
+
+    smtp_user: process.env.SMTP_USER,
+    smtp_pass: process.env.SMTP_PASS,
 };

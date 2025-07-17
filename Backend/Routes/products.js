@@ -6,7 +6,8 @@ import {
   updateProduct, 
   deleteProduct,
   deleteMachineType,
-  getProductCategories
+  getProductCategories,
+  getValidCategories
 } from '../Controllers/productRegistration.js';
 import { authenticateToken } from '../Middleware/auth.js';
 
@@ -14,6 +15,7 @@ const router = express.Router();
 
 router.get('/', getAllProducts);
 router.get('/categories', getProductCategories);
+router.get('/valid-categories', getValidCategories);
 router.get('/:id', getProductById);
 
 router.post('/', authenticateToken, registerProduct);

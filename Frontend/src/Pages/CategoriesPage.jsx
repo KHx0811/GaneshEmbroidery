@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import Header from '../Components/Header';
+import AdminHeader from '../Components/AdminHeader';
 import Modal from '../Components/Modal';
 import AddDesignForm from '../Components/AddDesignForm.jsx';
+import EditDesignForm from '../Components/EditDesignForm.jsx';
 import { isAuthenticated, getAuthToken, getUserRole } from '../utils/auth.js';
 import { Plus, Edit, Trash2, ArrowLeft, ShoppingCart, Heart } from 'lucide-react';
 
@@ -11,7 +13,9 @@ const url = import.meta.env.VITE_API_BASE_URL;
 const CategoriesPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { categoryName } = useParams();
   const [categories, setCategories] = useState([]);
+  const [categoryCounts, setCategoryCounts] = useState({});
   const [products, setProducts] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -25,18 +29,24 @@ const CategoriesPage = () => {
   });
 
   useEffect(() => {
-    // Check if user is admin
     const userRole = getUserRole();
     setIsAdmin(userRole === 'admin');
     
-    // Get category from URL parameters
-    const categoryParam = searchParams.get('category');
-    if (categoryParam) {
-      setSelectedCategory(categoryParam);
+    // Check for category from URL params first, then search params
+    if (categoryName) {
+      setSelectedCategory(decodeURIComponent(categoryName));
+    } else {
+      const categoryParam = searchParams.get('category');
+      if (categoryParam) {
+        setSelectedCategory(categoryParam);
+      } else {
+        // If no category in URL, clear selected category
+        setSelectedCategory(null);
+      }
     }
     
     fetchCategories();
-  }, [navigate, searchParams]);
+  }, [navigate, searchParams, categoryName]);
 
   useEffect(() => {
     if (selectedCategory) {
@@ -46,17 +56,57 @@ const CategoriesPage = () => {
 
   const fetchCategories = async () => {
     try {
-      const response = await fetch(`${url}/products/categories`);
+      // Always fetch all valid categories instead of just categories with products
+      const validCategoriesResponse = await fetch(`${url}/products/valid-categories`);
+      const validCategoriesData = await validCategoriesResponse.json();
       
-      const data = await response.json();
-      if (data.status === 'success') {
-        setCategories(data.data.categories || []);
+      if (validCategoriesData.status === 'success') {
+        const allCategories = validCategoriesData.data.categories || [];
+        setCategories(allCategories);
+        
+        // Fetch product counts for each category
+        await fetchCategoryCounts(allCategories);
+      } else {
+        // Fallback to hardcoded categories
+        const fallbackCategories = ['Kids', 'Bride', 'Boat Necks', 'One side', 'Lines', 'Mirrors', 'Birds', 'Animals', 'Manual Idles', 'Gods', 'Flowers'];
+        setCategories(fallbackCategories);
+        await fetchCategoryCounts(fallbackCategories);
       }
     } catch (error) {
       console.error('Error fetching categories:', error);
-      setCategories([]);
+      // Fallback to hardcoded categories
+      const fallbackCategories = ['Kids', 'Bride', 'Boat Necks', 'One side', 'Lines', 'Mirrors', 'Birds', 'Animals', 'Manual Idles', 'Gods', 'Flowers'];
+      setCategories(fallbackCategories);
+      await fetchCategoryCounts(fallbackCategories);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCategoryCounts = async (categoryList) => {
+    try {
+      const counts = {};
+      
+      // Fetch count for each category
+      for (const category of categoryList) {
+        try {
+          const response = await fetch(`${url}/products?category=${encodeURIComponent(category)}&limit=1`);
+          const data = await response.json();
+          
+          if (data.status === 'success' && data.data.pagination) {
+            counts[category] = data.data.pagination.total_products || 0;
+          } else {
+            counts[category] = 0;
+          }
+        } catch (error) {
+          console.error(`Error fetching count for category ${category}:`, error);
+          counts[category] = 0;
+        }
+      }
+      
+      setCategoryCounts(counts);
+    } catch (error) {
+      console.error('Error fetching category counts:', error);
     }
   };
 
@@ -97,10 +147,11 @@ const CategoriesPage = () => {
       const data = await response.json();
       if (response.ok && data.status === 'success') {
         alert('Design deleted successfully!');
-        // Refresh the products list
         if (selectedCategory) {
           fetchProductsByCategory(selectedCategory);
         }
+        // Refresh category counts
+        await fetchCategoryCounts(categories);
       } else {
         throw new Error(data.message || 'Failed to delete design');
       }
@@ -168,8 +219,80 @@ const CategoriesPage = () => {
   const handleAddDesign = async (designData) => {
     try {
       const token = getAuthToken();
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, 300000);
+
       const response = await fetch(`${url}/products`, {
         method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(designData),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        if (response.status === 413) {
+          throw new Error('File size too large. Please reduce file sizes and try again.');
+        } else if (response.status === 504 || response.status === 502) {
+          throw new Error('Server timeout. Please try again with smaller files.');
+        } else if (response.status >= 500) {
+          throw new Error('Server error. Please try again later.');
+        }
+      }
+      
+      const result = await response.json();
+      
+      if (response.ok && result.status === 'success') {
+        let successMessage = 'Design added successfully!';
+        if (result.data.action === 'format_added') {
+          successMessage = `Format "${designData.selected_format}" added to existing product successfully!`;
+        } else if (result.data.action === 'new_product') {
+          successMessage = 'New design product created successfully!';
+        }
+        
+        alert(successMessage);
+        closeModal();
+        if (selectedCategory) {
+          fetchProductsByCategory(selectedCategory);
+        }
+        // Refresh category counts
+        await fetchCategoryCounts(categories);
+      } else {
+        throw new Error(result.message || 'Failed to add design');
+      }
+    } catch (error) {
+      console.error('Error adding design:', error);
+      
+      let errorMessage = 'Failed to add design. Please try again.';
+      
+      if (error.name === 'AbortError') {
+        errorMessage = 'Upload timeout. Please try with smaller files or check your connection.';
+      } else if (error.message?.includes('NetworkError') || error.message?.includes('fetch')) {
+        errorMessage = 'Network error. Please check your internet connection and try again.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      alert('Upload failed: ' + errorMessage);
+      throw error;
+    }
+  };
+
+  const editDesign = async (designData) => {
+    try {
+      console.log('Updating design:', designData);
+      
+      const token = getAuthToken();
+      
+      const response = await fetch(`${url}/products/${modalState.data._id}`, {
+        method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
@@ -177,20 +300,28 @@ const CategoriesPage = () => {
         body: JSON.stringify(designData)
       });
       
+      if (!response.ok) {
+        throw new Error('Failed to update design');
+      }
+      
       const result = await response.json();
       
       if (response.ok && result.status === 'success') {
-        alert('Design added successfully!');
+        console.log('Design updated successfully:', result);
+        alert('Design updated successfully!');
         closeModal();
         if (selectedCategory) {
           fetchProductsByCategory(selectedCategory);
         }
+        // Refresh category counts
+        await fetchCategoryCounts(categories);
       } else {
-        throw new Error(result.message || 'Failed to add design');
+        throw new Error(result.message || 'Failed to update design');
       }
     } catch (error) {
-      console.error('Error adding design:', error);
-      alert('Failed to add design: ' + error.message);
+      console.error('Error updating design:', error);
+      alert('Failed to update design: ' + error.message);
+      throw error;
     }
   };
 
@@ -308,16 +439,16 @@ const CategoriesPage = () => {
   const backButtonStyle = {
     display: 'flex',
     alignItems: 'center',
-    gap: '10px',
+    justifyContent: 'center',
     background: 'linear-gradient(135deg, #D8B46A, #E6C77A)',
     color: 'white',
     border: 'none',
-    borderRadius: '10px',
-    padding: '12px 20px',
-    fontSize: '16px',
-    fontWeight: 'bold',
+    borderRadius: '50%',
+    width: '45px',
+    height: '45px',
     cursor: 'pointer',
-    transition: 'all 0.3s ease'
+    transition: 'all 0.3s ease',
+    marginRight: '15px'
   };
 
   const categoriesGridStyle = {
@@ -417,7 +548,7 @@ const CategoriesPage = () => {
   if (loading) {
     return (
       <div style={mainContainerStyle}>
-        <Header />
+        {isAdmin ? <AdminHeader /> : <Header />}
         <div style={{ textAlign: 'center', padding: '50px' }}>
           <div style={{ fontSize: '18px', color: '#666' }}>Loading...</div>
         </div>
@@ -428,18 +559,34 @@ const CategoriesPage = () => {
   return (
     <div style={mainContainerStyle}>
       <style>{spinnerCSS}</style>
-      <Header />
+      {isAdmin ? <AdminHeader /> : <Header />}
       
       <div style={headerStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
           <button
             style={backButtonStyle}
-            onClick={() => navigate(isAdmin ? '/admin' : '/')}
+            onClick={() => {
+              if (selectedCategory) {
+                // If we're viewing a category, go back to categories list
+                if (isAdmin) {
+                  navigate('/admin/categories');
+                } else {
+                  navigate('/categories');
+                }
+              } else {
+                // If we're on categories list, go back to dashboard/home
+                if (isAdmin) {
+                  navigate('/admin');
+                } else {
+                  navigate('/');
+                }
+              }
+            }}
             onMouseEnter={(e) => e.target.style.transform = 'translateY(-2px)'}
             onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
+            title='Back'
           >
             <ArrowLeft size={20} />
-            {isAdmin ? 'Back to Dashboard' : 'Back to Home'}
           </button>
           <h1 style={{ margin: 0, color: '#021d3b', fontSize: '2.5rem' }}>
             {isAdmin ? 'Categories Management' : 'Browse Categories'}
@@ -465,40 +612,74 @@ const CategoriesPage = () => {
             {isAdmin ? 'Select a Category to Manage' : 'Browse Design Categories'}
           </h2>
           <div style={categoriesGridStyle}>
-            {categories.map((category, index) => (
-              <div
-                key={index}
-                style={categoryCardStyle}
-                onClick={() => fetchProductsByCategory(category)}
-                onMouseEnter={(e) => {
-                  e.target.style.transform = 'translateY(-5px)';
-                  e.target.style.boxShadow = '0 8px 25px rgba(0, 0, 0, 0.15)';
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.transform = 'translateY(0)';
-                  e.target.style.boxShadow = '0 4px 15px rgba(0, 0, 0, 0.1)';
-                }}
-              >
-                <h3 style={{ margin: '0 0 10px 0', color: '#021d3b', fontSize: '1.4rem' }}>
-                  {category}
-                </h3>
-                <p style={{ margin: 0, color: '#666', fontSize: '14px' }}>
-                  {isAdmin ? 'Click to view and manage designs in this category' : 'Click to browse beautiful embroidery designs'}
-                </p>
+            {categories.length === 0 ? (
+              <div style={{
+                gridColumn: '1 / -1',
+                textAlign: 'center',
+                padding: '50px',
+                color: '#666',
+                fontSize: '18px'
+              }}>
+                Loading categories...
               </div>
-            ))}
+            ) : (
+              categories.map((category, index) => {
+                const productCount = categoryCounts[category] || 0;
+                
+                return (
+                  <div
+                    key={index}
+                    style={categoryCardStyle}
+                    onClick={() => {
+                      if (isAdmin) {
+                        navigate(`/admin/category/${encodeURIComponent(category)}`);
+                      } else {
+                        navigate(`/category/${encodeURIComponent(category)}`);
+                      }
+                    }}
+                    onMouseEnter={(e) => {
+                      e.target.style.transform = 'translateY(-5px)';
+                      e.target.style.boxShadow = '0 8px 25px rgba(0, 0, 0, 0.15)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.transform = 'translateY(0)';
+                      e.target.style.boxShadow = '0 4px 15px rgba(0, 0, 0, 0.1)';
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                      <h3 style={{ margin: 0, color: '#021d3b', fontSize: '1.4rem' }}>
+                        {category}
+                      </h3>
+                      <span style={{
+                        background: productCount > 0 ? '#4caf50' : '#f44336',
+                        color: 'white',
+                        borderRadius: '12px',
+                        padding: '4px 8px',
+                        fontSize: '12px',
+                        fontWeight: 'bold'
+                      }}>
+                        {productCount} design{productCount !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <p style={{ margin: 0, color: '#666', fontSize: '14px' }}>
+                      {isAdmin ? 
+                        (productCount > 0 ? 
+                          'Click to view and manage designs in this category' : 
+                          'No designs yet. Click to add the first design.') :
+                        (productCount > 0 ? 
+                          'Click to browse beautiful embroidery designs' : 
+                          'No designs available in this category yet.')
+                      }
+                    </p>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       ) : (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '20px' }}>
-            <button
-              style={backButtonStyle}
-              onClick={() => setSelectedCategory(null)}
-            >
-              <ArrowLeft size={16} />
-              Back to Categories
-            </button>
             <h2 style={{ margin: 0, color: '#021d3b', fontSize: '1.8rem' }}>
               {selectedCategory} Designs ({products.length})
             </h2>
@@ -516,7 +697,13 @@ const CategoriesPage = () => {
                     ...productCardStyle,
                     cursor: 'pointer'
                   }}
-                  onClick={() => navigate(`/product/${product._id}`)}
+                  onClick={() => {
+                    if (isAdmin) {
+                      navigate(`/admin/product/${product._id}`);
+                    } else {
+                      navigate(`/product/${product._id}`);
+                    }
+                  }}
                   onMouseEnter={(e) => e.target.style.transform = 'translateY(-5px)'}
                   onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
                 >
@@ -536,7 +723,6 @@ const CategoriesPage = () => {
                     {availableMachineTypes.length === 1 ? ' type' : ' types'}
                   </p>
 
-                  {/* Show machine types */}
                   <div style={{ marginBottom: '15px' }}>
                     {availableMachineTypes.map((machineType) => (
                       <div 
@@ -608,8 +794,8 @@ const CategoriesPage = () => {
                         <button
                           style={actionButtonStyle}
                           onClick={(e) => {
-                            e.stopPropagation(); // Prevent card click
-                            alert('Edit functionality coming soon!');
+                            e.stopPropagation();
+                            openModal('editDesign', 'Edit Design', product);
                           }}
                           title="Edit Product"
                         >
@@ -622,7 +808,7 @@ const CategoriesPage = () => {
                             cursor: deleteLoading[product._id] ? 'not-allowed' : 'pointer'
                           }}
                           onClick={(e) => {
-                            e.stopPropagation(); // Prevent card click
+                            e.stopPropagation();
                             deleteProduct(product._id);
                           }}
                           disabled={deleteLoading[product._id]}
@@ -647,7 +833,7 @@ const CategoriesPage = () => {
                             transition: 'all 0.3s ease'
                           }}
                           onClick={(e) => {
-                            e.stopPropagation(); // Prevent card click
+                            e.stopPropagation();
                             addToWishlist(product);
                           }}
                           title="Add to Wishlist"
@@ -700,6 +886,13 @@ const CategoriesPage = () => {
             <AddDesignForm
               onClose={closeModal}
               onSubmit={handleAddDesign}
+            />
+          )}
+          {modalState.type === 'editDesign' && (
+            <EditDesignForm
+              onClose={closeModal}
+              onSubmit={editDesign}
+              productData={modalState.data}
             />
           )}
         </Modal>

@@ -10,7 +10,9 @@ import {
   removeFromWishlist,
   getUserOrders,
   checkout,
-  buyNow
+  buyNow,
+  getUserSettings,
+  updateUserSettings
 } from '../Controllers/userOperations.js';
 import { authenticateToken } from '../Middleware/auth.js';
 
@@ -29,5 +31,9 @@ router.delete('/wishlist/:wishlistItemId', authenticateToken, removeFromWishlist
 router.get('/orders', authenticateToken, getUserOrders);
 router.post('/checkout', authenticateToken, checkout);
 router.post('/buy-now', authenticateToken, buyNow);
+
+// User settings routes
+router.get('/settings', authenticateToken, getUserSettings);
+router.post('/settings', authenticateToken, updateUserSettings);
 
 export default router;

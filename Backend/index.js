@@ -19,8 +19,17 @@ app.use(cors({
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
+  maxAge: 86400
 }));
+
+app.use('/product', (req, res, next) => {
+  if (req.method === 'POST' || req.method === 'PUT') {
+    req.setTimeout(300000);
+    res.setTimeout(300000);
+  }
+  next();
+});
 
 app.use((req, res, next) => {
   res.setHeader(

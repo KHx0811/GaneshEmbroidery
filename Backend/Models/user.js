@@ -41,6 +41,34 @@ const userSchema = new mongoose.Schema({
     enum: ['local', 'google'],
     default: 'local'
   },
+  resetOtp: {
+    type: String,
+    default: null
+  },
+  resetOtpExpireAt: {
+    type: Date,
+    default: null
+  },
+  emailVerificationOtp: {
+    type: String,
+    default: null
+  },
+  emailVerificationOtpExpireAt: {
+    type: Date,
+    default: null
+  },
+  pendingEmail: {
+    type: String,
+    default: null
+  },
+  enableTwoFactor: {
+    type: Boolean,
+    default: false
+  },
+  twoFactorEmail: {
+    type: String,
+    default: null
+  },
   cart: [{
     productId: {
       type: mongoose.Schema.Types.ObjectId,

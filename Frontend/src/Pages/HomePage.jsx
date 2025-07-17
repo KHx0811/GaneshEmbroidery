@@ -18,7 +18,7 @@ const HomePage = () => {
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [newCollections, setNewCollections] = useState([]);
   const [recentUploads, setRecentUploads] = useState([]);
-  const [categories] = useState(['kids', 'simple', 'Boat Neck', 'Bride Desings']);
+  const [categories] = useState(['Kids', 'Bride', 'Boat necks', 'One side', 'Lines', 'Mirrors', 'Birds', 'Animals', 'Manual idles', 'Gods', 'Flowers']);
   const [currentCategoryIndex, setCurrentCategoryIndex] = useState(0);
 
   useEffect(() => {
@@ -214,10 +214,10 @@ const HomePage = () => {
     border: '2px solid rgba(216, 180, 106, 0.6)',
     padding: '0 25px',
     backdropFilter: 'blur(12px)',
-    background: isSearchHovered ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0.15)',
+    background: 'rgba(255, 255, 255, 0.9)',
     transition: 'all 0.3s ease',
     fontSize: '16px',
-    color: isSearchHovered ? '#333' : '#fff',
+    color: '#333',
     outline: 'none',
     boxShadow: '0 6px 20px rgba(0, 0, 0, 0.25)',
   };
@@ -232,7 +232,6 @@ const HomePage = () => {
     fontWeight: '600',
     cursor: 'pointer',
     transition: 'all 0.3s ease',
-    boxShadow: '0 4px 15px rgba(216, 180, 106, 0.4)',
   };
 
   const searchResultsStyle = {
@@ -389,7 +388,7 @@ const HomePage = () => {
                               color: '#666',
                               textTransform: 'capitalize'
                             }}>
-                              {product.category} • ₹{product.price}
+                              {Array.isArray(product.categories) ? product.categories.join(', ') : product.category || 'No categories'} • ₹{product.price}
                             </div>
                           </div>
                         </div>
@@ -413,8 +412,8 @@ const HomePage = () => {
                 e.target.style.boxShadow = '0 8px 25px rgba(216, 180, 106, 0.5)';
               }}
               onMouseLeave={(e) => {
-                e.target.style.transform = 'translateY(0)';
-                e.target.style.boxShadow = '0 4px 15px rgba(216, 180, 106, 0.4)';
+                e.target.style.transform = 'translateY(0px)';
+                e.target.style.boxShadow = '0 4px 15px rgba(216, 180, 106, 0.1)';
               }}
             >
               Search Design

@@ -146,52 +146,126 @@ export const getOrCreateFolder = async (folderName, parentFolderId = null) => {
     }
 };
 
-export const uploadFileToFolder = async (fileData, folderId) => {
+export const findFileInFolder = async (fileName, folderId) => {
     try {
-        const { buffer, fileName, mimeType } = fileData;
-
-        const stream = new Readable();
-        stream.push(buffer);
-        stream.push(null);
-
-        const fileMetadata = {
-            name: fileName,
-            parents: [folderId],
-        };
-
-        const media = {
-            mimeType: mimeType,
-            body: stream,
-        };
-
-        const response = await drive.files.create({
-            requestBody: fileMetadata,
-            media: media,
-            fields: 'id, name, webViewLink, webContentLink',
+        const query = `name='${fileName}' and '${folderId}' in parents and trashed=false`;
+        
+        const response = await drive.files.list({
+            q: query,
+            fields: 'files(id, name)',
         });
 
-        await drive.permissions.create({
-            fileId: response.data.id,
-            requestBody: {
-                role: 'reader',
-                type: 'anyone',
-            },
-        });
-
-        return {
-            success: true,
-            fileId: response.data.id,
-            fileName: response.data.name,
-            webViewLink: response.data.webViewLink,
-            downloadUrl: `https://drive.google.com/uc?id=${response.data.id}&export=download`
-        };
+        if (response.data.files.length > 0) {
+            return {
+                success: true,
+                found: true,
+                fileId: response.data.files[0].id,
+                fileName: response.data.files[0].name
+            };
+        } else {
+            return {
+                success: true,
+                found: false,
+                fileId: null,
+                fileName: null
+            };
+        }
     } catch (error) {
-        console.error('Error uploading file:', error);
+        console.error('Error finding file:', error);
         return {
             success: false,
             error: error.message
         };
     }
+};
+
+export const uploadFileToFolder = async (fileData, folderId) => {
+    const maxRetries = 3;
+    let lastError = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const { buffer, fileName, mimeType } = fileData;
+
+            const existingFileCheck = await findFileInFolder(fileName, folderId);
+            
+            if (existingFileCheck.success && existingFileCheck.found) {
+                console.log(`File ${fileName} already exists, deleting old version...`);
+                try {
+                    await drive.files.delete({ fileId: existingFileCheck.fileId });
+                    console.log(`Successfully deleted old version of ${fileName}`);
+                } catch (deleteError) {
+                    console.warn(`Could not delete old version of ${fileName}:`, deleteError.message);
+                }
+            }
+
+            const stream = new Readable();
+            stream.push(buffer);
+            stream.push(null);
+
+            const fileMetadata = {
+                name: fileName,
+                parents: [folderId],
+            };
+
+            const media = {
+                mimeType: mimeType,
+                body: stream,
+            };
+
+            const uploadPromise = drive.files.create({
+                requestBody: fileMetadata,
+                media: media,
+                fields: 'id, name, webViewLink, webContentLink',
+            });
+
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Upload timeout')), 120000); // 2 minutes
+            });
+
+            const response = await Promise.race([uploadPromise, timeoutPromise]);
+
+            await drive.permissions.create({
+                fileId: response.data.id,
+                requestBody: {
+                    role: 'reader',
+                    type: 'anyone',
+                },
+            });
+
+            return {
+                success: true,
+                fileId: response.data.id,
+                fileName: response.data.name,
+                webViewLink: response.data.webViewLink,
+                downloadUrl: `https://drive.google.com/uc?id=${response.data.id}&export=download`,
+                isReplacement: existingFileCheck.success && existingFileCheck.found,
+                attempt: attempt
+            };
+        } catch (error) {
+            lastError = error;
+            console.error(`Upload attempt ${attempt} failed for file ${fileData.fileName}:`, error.message);
+            
+            if (error.message?.includes('timeout') || 
+                error.message?.includes('Authentication') || 
+                error.message?.includes('quota') ||
+                error.code === 403) {
+                break;
+            }
+            
+            if (attempt < maxRetries) {
+                const waitTime = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
+                console.log(`Waiting ${waitTime}ms before retry...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+        }
+    }
+    
+    console.error(`All ${maxRetries} upload attempts failed for file ${fileData.fileName}`);
+    return {
+        success: false,
+        error: lastError?.message || 'Upload failed after all retry attempts'
+    };
 };
 
 export const uploadLocalFilesToGoogleDrive = async (filePaths, productName, machineType) => {
@@ -377,7 +451,6 @@ export const deleteFileFromGoogleDrive = async (fileId) => {
     } catch (error) {
         console.error(`Error deleting file ${fileId} from Google Drive:`, error);
         
-        // If file doesn't exist (404), consider it a success since the goal is achieved
         if (error.code === 404 || error.message.includes('File not found')) {
             console.log(`File ${fileId} not found in Google Drive (already deleted or doesn't exist)`);
             return {
@@ -556,7 +629,6 @@ export const downloadFileAsBuffer = async (fileId) => {
             responseType: 'stream'
         });
 
-        // Get file info for filename
         const fileInfo = await drive.files.get({
             fileId: fileId,
             fields: 'name, mimeType, size'

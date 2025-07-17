@@ -124,7 +124,11 @@ export const getOrderById = async (req, res) => {
     try {
         const { id } = req.params;
         
-        const order = await Order.findById(id);
+        let order = await Order.findOne({ orderId: id });
+        if (!order) {
+            order = await Order.findById(id);
+        }
+        
         if (!order) {
             return res.status(404).json({
                 success: false,
@@ -134,10 +138,37 @@ export const getOrderById = async (req, res) => {
 
         const user = await User.findById(order.userId).select('username email');
         
+        const enrichedProducts = await Promise.all(
+            order.products.map(async (orderProduct) => {
+                try {
+                    const fullProduct = await Product.findById(orderProduct.productId);
+                    if (fullProduct) {
+                        return {
+                            ...orderProduct.toObject(),
+                            image: fullProduct.image,
+                            category: fullProduct.category,
+                            description: fullProduct.description,
+                            productName: orderProduct.productName,
+                            machine_type: orderProduct.machine_type,
+                            price: orderProduct.price,
+                            quantity: orderProduct.quantity,
+                            designFiles: orderProduct.designFiles
+                        };
+                    } else {
+                        return orderProduct.toObject();
+                    }
+                } catch (error) {
+                    console.warn(`Failed to fetch product details for ${orderProduct.productId}:`, error.message);
+                    return orderProduct.toObject();
+                }
+            })
+        );
+        
         const orderWithUserDetails = {
             ...order.toObject(),
             userName: user?.username || 'Unknown User',
-            userEmail: user?.email || 'Unknown Email'
+            userEmail: user?.email || 'Unknown Email',
+            products: enrichedProducts
         };
 
         res.status(200).json({

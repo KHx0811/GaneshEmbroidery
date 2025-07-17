@@ -167,7 +167,6 @@
 }
 
 .side-heading {
-  animation: textSlideRight 2s ease-out;
   font-family: 'Georgia', 'Times New Roman', serif;
   font-style: italic;
 }

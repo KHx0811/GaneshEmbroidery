@@ -2,6 +2,20 @@ import Product from "../Models/product.js";
 import { uploadImageToCloudinary, deleteImageFromCloudinary } from "../Services/cloudinaryService.js";
 import { uploadDesignFilesToGoogleDrive, deleteFileFromGoogleDrive, uploadLocalFilesToGoogleDrive, deleteFolderFromGoogleDrive, findFolderByName, checkFolderEmpty } from "../Services/googleDriveService.js";
 
+const VALID_CATEGORIES = [
+  'Kids', 
+  'Bride', 
+  'Boat Necks', 
+  'One side', 
+  'Lines', 
+  'Mirrors', 
+  'Birds', 
+  'Animals', 
+  'Manual Idles', 
+  'Gods', 
+  'Flowers'
+];
+
 const validateAndFixDesignFilesStructure = (designFiles) => {
   const defaultDesignFiles = {
     DST_BERNINA_14x8: { file_url: null, google_drive_id: null, file_name: null },
@@ -50,12 +64,22 @@ export const registerProduct = async (req, res) => {
       });
     }
 
-    const { product_name, category, price, design_type, image, description, selected_format, design_files } = req.body;
+    const { product_name, categories, price, design_type, image, description, selected_format, design_files } = req.body;
     
-    if (!product_name || !category || !price || !design_type || !image || !description) {
+    console.log('Received registration data:', {
+      product_name,
+      categories,
+      price,
+      design_type,
+      description,
+      selected_format,
+      design_files_count: design_files ? design_files.length : 0
+    });
+    
+    if (!product_name || !categories || !Array.isArray(categories) || categories.length === 0 || !price || !design_type || !image) {
       return res.status(400).json({ 
         status: "error",
-        message: "All required fields must be provided (product_name, category, price, design_type, image, description)",
+        message: "All required fields must be provided (product_name, categories (array), price, design_type, image)",
         data: null
       });
     }
@@ -68,11 +92,23 @@ export const registerProduct = async (req, res) => {
       });
     }
 
-    const validCategories = ['kids', 'simple', 'Boat Neck', 'Bride Desings'];
-    if (!validCategories.includes(category)) {
+    const validCategories = VALID_CATEGORIES;
+    
+    const cleanCategories = categories.filter(cat => cat && typeof cat === 'string' && cat.trim() !== '');
+    
+    if (cleanCategories.length === 0) {
       return res.status(400).json({ 
         status: "error",
-        message: "Invalid category. Must be one of: " + validCategories.join(', '),
+        message: "At least one valid category is required",
+        data: null
+      });
+    }
+    
+    const invalidCategories = cleanCategories.filter(cat => !validCategories.includes(cat));
+    if (invalidCategories.length > 0) {
+      return res.status(400).json({ 
+        status: "error",
+        message: `Invalid categories: ${invalidCategories.join(', ')}. Must be one or more of: ${validCategories.join(', ')}`,
         data: null
       });
     }
@@ -151,6 +187,24 @@ export const registerProduct = async (req, res) => {
         const dbKey = selected_format.replace(/-/g, '_').replace(/\./g, '_');
         
         if (productDesignFiles.hasOwnProperty(dbKey)) {
+          if (existingProduct && productDesignFiles[dbKey] && productDesignFiles[dbKey].google_drive_id) {
+            const existingIds = Array.isArray(productDesignFiles[dbKey].google_drive_id) 
+              ? productDesignFiles[dbKey].google_drive_id 
+              : [productDesignFiles[dbKey].google_drive_id];
+            
+            console.log(`Cleaning up existing files for ${selected_format}...`);
+            for (const fileId of existingIds) {
+              if (fileId) {
+                try {
+                  await deleteFileFromGoogleDrive(fileId);
+                  console.log(`Successfully deleted old file: ${fileId}`);
+                } catch (error) {
+                  console.warn(`Could not delete old file ${fileId}:`, error.message);
+                }
+              }
+            }
+          }
+
           const fileUrls = [];
           const fileIds = [];
           const fileNames = [];
@@ -160,11 +214,17 @@ export const registerProduct = async (req, res) => {
               fileUrls.push(uploadResult.downloadUrl);
               fileIds.push(uploadResult.fileId);
               fileNames.push(uploadResult.fileName);
+              
+              if (uploadResult.isReplacement) {
+                console.log(`File ${uploadResult.fileName} was replaced successfully`);
+              } else {
+                console.log(`File ${uploadResult.fileName} was uploaded successfully`);
+              }
             }
           }
           
           productDesignFiles[dbKey] = {
-            file_url: fileUrls.length === 1 ? fileUrls[0] : fileUrls, // Single file or array
+            file_url: fileUrls.length === 1 ? fileUrls[0] : fileUrls,
             google_drive_id: fileIds.length === 1 ? fileIds[0] : fileIds,
             file_name: fileNames.length === 1 ? fileNames[0] : fileNames
           };
@@ -209,6 +269,7 @@ export const registerProduct = async (req, res) => {
 
     if (existingProduct) {
       existingProduct.design_files = productDesignFiles;
+      existingProduct.categories = cleanCategories;
       existingProduct.updated_at = Date.now();
       savedProduct = await existingProduct.save();
       
@@ -227,13 +288,13 @@ export const registerProduct = async (req, res) => {
     } else {
       const newProduct = new Product({
         product_name,
-        category,
+        categories: cleanCategories,
         price: parseFloat(price),
         design_type,
         image: cloudinaryResult.url,
         cloudinary_image_id: cloudinaryResult.public_id,
         design_files: productDesignFiles,
-        description
+        description: description || ''
       });
 
       savedProduct = await newProduct.save();
@@ -254,9 +315,32 @@ export const registerProduct = async (req, res) => {
 
   } catch (error) {
     console.error("Error registering product:", error);
-    return res.status(500).json({ 
+    
+    let errorMessage = "Internal server error";
+    let statusCode = 500;
+    
+    if (error.message?.includes('timeout')) {
+      errorMessage = "Upload timeout. Please try with smaller files.";
+      statusCode = 408;
+    } else if (error.message?.includes('network') || error.message?.includes('ECONNRESET')) {
+      errorMessage = "Network error. Please check your connection and try again.";
+      statusCode = 503;
+    } else if (error.message?.includes('size') || error.message?.includes('large')) {
+      errorMessage = "File size too large. Please reduce file sizes and try again.";
+      statusCode = 413;
+    } else if (error.message?.includes('Google Drive')) {
+      errorMessage = "File storage error. Please try again.";
+      statusCode = 503;
+    } else if (error.message?.includes('Cloudinary')) {
+      errorMessage = "Image upload error. Please try again.";
+      statusCode = 503;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    return res.status(statusCode).json({ 
       status: "error",
-      message: "Internal server error: " + error.message,
+      message: errorMessage,
       data: null
     });
   }
@@ -269,7 +353,7 @@ export const getAllProducts = async (req, res) => {
     const query = {};
     
     if (category) {
-      query.category = category;
+      query.categories = { $in: [category] };
     }
     
     if (design_type) {
@@ -360,7 +444,7 @@ export const updateProduct = async (req, res) => {
     }
     
     const { id } = req.params;
-    const { product_name, category, price, design_type, image, description, design_files } = req.body;
+    const { product_name, categories, price, image, description, design_files } = req.body;
     
     const product = await Product.findById(id);
     
@@ -375,10 +459,31 @@ export const updateProduct = async (req, res) => {
     product.design_files = validateAndFixDesignFilesStructure(product.design_files);
     
     if (product_name) product.product_name = product_name;
-    if (category) product.category = category;
+    if (categories && Array.isArray(categories)) {
+      const validCategories = VALID_CATEGORIES;
+      
+      const cleanCategories = categories.filter(cat => cat && typeof cat === 'string' && cat.trim() !== '');
+      
+      if (cleanCategories.length === 0) {
+        return res.status(400).json({ 
+          status: "error",
+          message: "At least one valid category is required",
+          data: null
+        });
+      }
+      
+      const invalidCategories = cleanCategories.filter(cat => !validCategories.includes(cat));
+      if (invalidCategories.length > 0) {
+        return res.status(400).json({ 
+          status: "error",
+          message: `Invalid categories: ${invalidCategories.join(', ')}. Must be one or more of: ${validCategories.join(', ')}`,
+          data: null
+        });
+      }
+      product.categories = cleanCategories;
+    }
     if (price) product.price = parseFloat(price);
-    if (design_type) product.design_type = design_type;
-    if (description) product.description = description;
+    if (description !== undefined) product.description = description; // Allow empty description
     
     if (image && image !== product.image) {
       const cloudinaryResult = await uploadImageToCloudinary(image, 'embroidery-designs');
@@ -393,11 +498,13 @@ export const updateProduct = async (req, res) => {
       }
     }
     
-    if (design_files && Object.keys(design_files).length > 0) {
+    if (design_files && typeof design_files === 'object' && Object.keys(design_files).length > 0) {
       const processedFiles = {};
-      for (const [machineType, fileData] of Object.entries(design_files)) {
-        if (fileData && fileData.data) {
-          if (fileData.data.startsWith('data:')) {
+      
+      for (const [machineType, fileArray] of Object.entries(design_files)) {
+        if (Array.isArray(fileArray) && fileArray.length > 0) {
+          const fileData = fileArray[0]; // Take first file for current structure
+          if (fileData && fileData.data && fileData.data.startsWith('data:')) {
             const base64Data = fileData.data.split(',')[1];
             processedFiles[machineType] = {
               buffer: Buffer.from(base64Data, 'base64'),
@@ -415,23 +522,27 @@ export const updateProduct = async (req, res) => {
           for (const [machineType, uploadResult] of Object.entries(driveResult.uploadResults)) {
             if (uploadResult.success) {
               const dbKey = machineType.replace(/-/g, '_').replace(/\./g, '_');
-              if (product.design_files[dbKey]) {
-                if (product.design_files[dbKey].google_drive_id) {
+              
+              if (product.design_files[dbKey] && product.design_files[dbKey].google_drive_id) {
+                try {
                   await deleteFileFromGoogleDrive(product.design_files[dbKey].google_drive_id);
+                } catch (error) {
+                  console.warn(`Failed to delete old file:`, error.message);
                 }
-                
-                product.design_files[dbKey] = {
-                  file_url: uploadResult.downloadUrl,
-                  google_drive_id: uploadResult.fileId,
-                  file_name: uploadResult.fileName
-                };
               }
+              
+              product.design_files[dbKey] = {
+                file_url: uploadResult.downloadUrl,
+                google_drive_id: uploadResult.fileId,
+                file_name: uploadResult.fileName
+              };
             }
           }
         }
       }
     }
     
+    product.updated_at = Date.now();
     await product.save();
     
     return res.status(200).json({
@@ -477,7 +588,6 @@ export const deleteProduct = async (req, res) => {
     console.log('Deleting product:', product.product_name);
     console.log('Product data structure:', JSON.stringify(product, null, 2));
 
-    // Delete image from Cloudinary
     if (product.cloudinary_image_id) {
       console.log('Deleting Cloudinary image:', product.cloudinary_image_id);
       try {
@@ -485,11 +595,9 @@ export const deleteProduct = async (req, res) => {
         console.log('Cloudinary delete result:', cloudinaryResult);
       } catch (error) {
         console.error('Error deleting from Cloudinary:', error);
-        // Continue with deletion even if Cloudinary fails
       }
     }
 
-    // Delete design files from Google Drive
     if (product.design_files && typeof product.design_files === 'object') {
       console.log('Processing design files for deletion...');
       
@@ -499,11 +607,9 @@ export const deleteProduct = async (req, res) => {
         console.log(`Processing ${machineType}:`, fileData);
         
         if (fileData && typeof fileData === 'object') {
-          // Handle both single file and array of files
           const googleDriveIds = fileData.google_drive_id;
           
           if (googleDriveIds) {
-            // If it's an array of file IDs
             if (Array.isArray(googleDriveIds)) {
               console.log(`Deleting ${googleDriveIds.length} files for ${machineType}`);
               for (const fileId of googleDriveIds) {
@@ -512,11 +618,9 @@ export const deleteProduct = async (req, res) => {
                   console.log(`Drive delete result for ${fileId}:`, driveResult);
                 } catch (error) {
                   console.error(`Error deleting file ${fileId} from Google Drive:`, error);
-                  // Continue with other files even if one fails
                 }
               }
             } 
-            // If it's a single file ID
             else {
               console.log(`Deleting single file for ${machineType}: ${googleDriveIds}`);
               try {
@@ -524,11 +628,9 @@ export const deleteProduct = async (req, res) => {
                 console.log(`Drive delete result for ${googleDriveIds}:`, driveResult);
               } catch (error) {
                 console.error(`Error deleting file ${googleDriveIds} from Google Drive:`, error);
-                // Continue with deletion even if Google Drive fails
               }
             }
             
-            // Track machine types that had files
             processedMachineTypes.add(machineType);
           } else {
             console.log(`No Google Drive ID found for ${machineType}`);
@@ -536,18 +638,15 @@ export const deleteProduct = async (req, res) => {
         }
       }
       
-      // After deleting all files, try to delete the machine type folders and product folder
       console.log('Attempting to delete empty folders...');
       
       try {
-        // Find the root folder for this product
         const productFolderResult = await findFolderByName(product.product_name);
         
         if (productFolderResult.success) {
           const productFolderId = productFolderResult.folder.id;
           console.log(`Found product folder: ${product.product_name} (${productFolderId})`);
           
-          // Delete machine type folders that we processed
           for (const machineType of processedMachineTypes) {
             try {
               const machineTypeFolderResult = await findFolderByName(machineType, productFolderId);
@@ -556,7 +655,6 @@ export const deleteProduct = async (req, res) => {
                 const machineTypeFolderId = machineTypeFolderResult.folder.id;
                 console.log(`Found machine type folder: ${machineType} (${machineTypeFolderId})`);
                 
-                // Check if folder is empty and delete it
                 const folderEmptyCheck = await checkFolderEmpty(machineTypeFolderId);
                 if (folderEmptyCheck.success && folderEmptyCheck.isEmpty) {
                   const deleteFolderResult = await deleteFolderFromGoogleDrive(machineTypeFolderId);
@@ -570,7 +668,6 @@ export const deleteProduct = async (req, res) => {
             }
           }
           
-          // Check if product folder is now empty and delete it
           const productFolderEmptyCheck = await checkFolderEmpty(productFolderId);
           if (productFolderEmptyCheck.success && productFolderEmptyCheck.isEmpty) {
             console.log(`Product folder ${product.product_name} is empty, deleting...`);
@@ -584,11 +681,9 @@ export const deleteProduct = async (req, res) => {
         }
       } catch (error) {
         console.error('Error during folder cleanup:', error);
-        // Continue with product deletion even if folder cleanup fails
       }
     }
 
-    // Delete the product from database
     await Product.findByIdAndDelete(id);
     console.log('Product deleted from database successfully');
 
@@ -739,9 +834,34 @@ export const getProductWithDesignFiles = async (req, res) => {
   }
 };
 
+export const getValidCategories = async (req, res) => {
+  try {
+    return res.status(200).json({
+      status: "success",
+      message: "Valid categories retrieved successfully",
+      data: {
+        categories: VALID_CATEGORIES
+      }
+    });
+  } catch (error) {
+    console.error("Error getting valid categories:", error);
+    return res.status(500).json({
+      status: "error",
+      message: "Internal server error: " + error.message,
+      data: null
+    });
+  }
+};
+
 export const getProductCategories = async (req, res) => {
   try {
-    const categories = await Product.distinct('category');
+    const categoriesResult = await Product.aggregate([
+      { $unwind: "$categories" },
+      { $group: { _id: "$categories" } },
+      { $sort: { _id: 1 } }
+    ]);
+    
+    const categories = categoriesResult.map(item => item._id);
     const designTypes = await Product.distinct('design_type');
     
     const priceStats = await Product.aggregate([
@@ -827,7 +947,6 @@ export const deleteMachineType = async (req, res) => {
 
     console.log(`Deleting machine type ${machineType} from product:`, product.product_name);
 
-    // Convert machine type to database key format
     const dbKey = machineType.replace(/-/g, '_').replace(/\./g, '_');
     
     if (!product.design_files || !product.design_files[dbKey]) {
@@ -840,7 +959,6 @@ export const deleteMachineType = async (req, res) => {
 
     const fileData = product.design_files[dbKey];
     
-    // Delete files from Google Drive
     if (fileData.google_drive_id) {
       const googleDriveIds = fileData.google_drive_id;
       
@@ -865,14 +983,12 @@ export const deleteMachineType = async (req, res) => {
       }
     }
 
-    // Reset the machine type data in database
     product.design_files[dbKey] = {
       file_url: null,
       google_drive_id: null,
       file_name: null
     };
 
-    // Try to delete the machine type folder
     try {
       const productFolderResult = await findFolderByName(product.product_name);
       

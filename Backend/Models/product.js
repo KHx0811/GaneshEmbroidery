@@ -6,12 +6,12 @@ const productSchema = new Schema({
     required: true,
     trim: true
   },
-  category: {
+  categories: [{
     type: String,
     required: true,
-    enum: ['kids', 'simple', 'Boat Neck', 'Bride Desings'],
+    enum: ['Kids', 'Bride', 'Boat Necks', 'One side', 'Lines', 'Mirrors', 'Birds', 'Animals', 'Manual Idles', 'Gods', 'Flowers'],
     trim: true
-  },
+  }],
   price: {
     type: Number,
     required: true,
@@ -72,8 +72,9 @@ const productSchema = new Schema({
   },
   description: {
     type: String,
-    required: true,
-    trim: true
+    required: false,
+    trim: true,
+    default: ''
   },
   created_at: {
     type: Date,

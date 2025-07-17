@@ -8,7 +8,7 @@ const AuthSuccess = () => {
     
     if (token) {
       setAuthToken(token);
-      alert('Google Sign-In successful!');
+      // Redirect without showing token
       window.location.href = '/';
     } else {
       alert('Authentication failed. Please try again.');

@@ -334,7 +334,6 @@ export const addToWishlist = async (req, res) => {
       });
     }
 
-    // Check if item already exists in wishlist
     const existingWishlistItem = user.wishlist.find(
       item => item.productId.toString() === productId
     );
@@ -448,7 +447,6 @@ export const getUserOrders = async (req, res) => {
   try {
     const userId = req.user.userId;
 
-    // Add no-cache headers to ensure fresh data
     res.set({
       'Cache-Control': 'no-cache, no-store, must-revalidate',
       'Pragma': 'no-cache',
@@ -517,9 +515,7 @@ export const checkout = async (req, res) => {
         });
       }
 
-      // Handle multiple machine types per cart item
       if (item.machineTypes && Array.isArray(item.machineTypes)) {
-        // Create separate order items for each machine type
         for (const machineType of item.machineTypes) {
           const productOrderItem = {
             productId: product._id.toString(),
@@ -533,7 +529,6 @@ export const checkout = async (req, res) => {
           totalAmount += machineType.price * (item.quantity || 1);
         }
       } else {
-        // Fallback for items with single machine type (legacy support)
         const productOrderItem = {
           productId: product._id.toString(),
           productName: product.product_name,
@@ -652,6 +647,73 @@ export const buyNow = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Internal server error'
+    });
+  }
+};
+
+export const getUserSettings = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('enableTwoFactor twoFactorEmail email role');
+    
+    if (!user) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'User not found'
+      });
+    }
+
+    const contactEmail = user.role === 'admin' ? 
+      (process.env.BUSINESS_CONTACT_EMAIL || 'ganeshembroidery0@gmail.com') : 
+      user.email;
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        enableTwoFactor: user.enableTwoFactor || false,
+        twoFactorEmail: user.twoFactorEmail,
+        contactEmail: contactEmail
+      }
+    });
+  } catch (error) {
+    console.error('Get user settings error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error'
+    });
+  }
+};
+
+export const updateUserSettings = async (req, res) => {
+  try {
+    const { security, general } = req.body;
+    
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'User not found'
+      });
+    }
+
+    if (security && typeof security.enableTwoFactor === 'boolean') {
+      user.enableTwoFactor = security.enableTwoFactor;
+      if (!security.enableTwoFactor) {
+        user.twoFactorEmail = null;
+      }
+    }
+
+
+    await user.save();
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Settings updated successfully'
+    });
+  } catch (error) {
+    console.error('Update user settings error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error'
     });
   }
 };

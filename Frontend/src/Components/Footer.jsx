@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import assets from '../assets/assets.js';
+import { Mail, PhoneCall } from 'lucide-react';
 
 
 const Footer = () => {
@@ -143,9 +144,7 @@ const Footer = () => {
               {[
                 { to: '/about', label: 'About Us' },
                 { to: '/contact', label: 'Contact Support' },
-                { to: '/faq', label: 'FAQ' },
-                { to: '/size-guide', label: 'Size Guide' },
-                { to: '/tutorials', label: 'Tutorials' }
+                { to: '/faq', label: 'FAQ' }
               ].map((link, index) => (
                 <li key={index} style={{ marginBottom: '10px' }}>
                   <Link 
@@ -190,7 +189,7 @@ const Footer = () => {
               color: 'rgba(255, 255, 255, 0.8)'
             }}>
               <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center' }}>
-                <span style={{ marginRight: '8px', fontSize: '1rem' }}>📧</span>
+                <Mail size={16} style={{ marginRight: '8px', fontSize: '1rem' }} />
                 <a 
                   href="mailto:ganeshembroidery99@gmail.com?subject=Inquiry%20about%20Embroidery%20Designs&body=Hello,%20I%20would%20like%20to%20know%20more%20about%20your%20embroidery%20designs."
                   style={{
@@ -206,7 +205,7 @@ const Footer = () => {
                 </a>
               </div>
               <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center' }}>
-                <span style={{ marginRight: '8px', fontSize: '1rem' }}>📱</span>
+                <PhoneCall size={16} style={{ marginRight: '8px', fontSize: '1rem' }} />
                 <a 
                   href="tel:+919948792999"
                   style={{
@@ -321,12 +320,11 @@ const Footer = () => {
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{
-                        display: 'inline-block',
+                        display: 'flex',
                         width: '30px',
                         height: '30px',
                         background: 'rgba(216, 180, 106, 0.1)',
                         borderRadius: '50%',
-                        display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         textDecoration: 'none',

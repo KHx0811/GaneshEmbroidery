@@ -378,8 +378,8 @@ const ProductDetailsPage = () => {
           <div style={{ marginBottom: '20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
               <Package size={20} style={{ color: '#666' }} />
-              <span style={{ fontWeight: 'bold', color: '#333' }}>Category:</span>
-              <span style={{ color: '#666' }}>{product.category}</span>
+              <span style={{ fontWeight: 'bold', color: '#333' }}>Categories:</span>
+              <span style={{ color: '#666' }}>{Array.isArray(product.categories) ? product.categories.join(', ') : product.category || 'No categories'}</span>
             </div>
             {selectedMachineTypes.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
