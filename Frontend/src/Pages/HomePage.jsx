@@ -698,57 +698,31 @@ const HomePage = () => {
               </h2>
             </div>
 
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
-              gap: '30px',
+            <div 
+              className="new-arrivals-grid"
+              style={{
               maxWidth: '1400px',
               margin: '0 auto'
             }}>
               {recentUploads.length > 0 ? recentUploads.slice(0, 6).map((product, index) => (
                 <div
                   key={product._id}
-                  className="product-card"
+                  className="new-arrivals-card"
                   style={{
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    backdropFilter: 'blur(10px)',
-                    borderRadius: '15px',
-                    overflow: 'hidden',
-                    cursor: 'pointer',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
-                    animation: `fadeInUp 0.6s ease-out ${index * 0.1}s both`,
-                    transition: 'all 0.3s ease',
-                    minHeight: '200px'
+                    animation: `fadeInUp 0.6s ease-out ${index * 0.1}s both`
                   }}
                   onClick={() => navigate(`/product/${product._id}`)}
-                  onMouseEnter={(e) => {
-                    e.target.style.transform = 'translateY(-10px)';
-                    e.target.style.boxShadow = '0 15px 40px rgba(0, 0, 0, 0.3)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.transform = 'translateY(0)';
-                    e.target.style.boxShadow = 'none';
-                  }}
                 >
-                  <div style={{ position: 'relative', paddingBottom: '75%', overflow: 'hidden' }}>
-                    <img
-                      src={product.image}
-                      alt={product.product_name}
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        backgroundColor: '#444',
-                        transition: 'transform 0.3s ease'
-                      }}
-                      onError={(e) => {
-                        e.target.src = defaultPlaceholder;
-                        e.target.style.backgroundColor = '#555';
-                      }}
-                    />
+                  <img
+                    src={product.image}
+                    alt={product.product_name}
+                    className="new-arrivals-card-image"
+                    onError={(e) => {
+                      e.target.src = defaultPlaceholder;
+                      e.target.style.backgroundColor = '#555';
+                    }}
+                  />
+                  <div className="new-arrivals-card-content">
                     <div style={{
                       position: 'absolute',
                       top: '10px',
@@ -759,7 +733,8 @@ const HomePage = () => {
                       borderRadius: '15px',
                       fontSize: '12px',
                       fontWeight: '600',
-                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)'
+                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+                      zIndex: 2
                     }}>
                       NEW
                     </div>
@@ -773,31 +748,14 @@ const HomePage = () => {
                       borderRadius: '15px',
                       fontSize: '13px',
                       fontWeight: '600',
-                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)'
+                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+                      zIndex: 2
                     }}>
                       ₹{product.price}
                     </div>
-                    <div style={{
-                      position: 'absolute',
-                      bottom: '0',
-                      left: '0',
-                      right: '0',
-                      background: 'linear-gradient(transparent, rgba(0, 0, 0, 0.7))',
-                      padding: '20px 15px 15px',
-                      color: 'white'
-                    }}>
-                      <h3 style={{
-                        margin: 0,
-                        fontSize: '16px',
-                        fontWeight: '600',
-                        textShadow: '1px 1px 3px rgba(0, 0, 0, 0.8)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        {product.product_name}
-                      </h3>
-                    </div>
+                    <h3 className="new-arrivals-card-title">
+                      {product.product_name}
+                    </h3>
                   </div>
                 </div>
               )) : (

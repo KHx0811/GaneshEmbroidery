@@ -2,31 +2,37 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import assets from '../assets/assets.js';
 import { Mail, PhoneCall } from 'lucide-react';
+import '../styles/HomePage.css';
 
 
 const Footer = () => {
   const currentYear = new Date().getFullYear();
 
   return (
-    <footer style={{
+    <footer 
+      className="footer-responsive"
+      style={{
       background: 'linear-gradient(135deg, #2c3e50 0%, #34495e 100%)',
       color: 'white',
       padding: '60px 0 20px 0',
       marginTop: 'auto'
     }}>
-      <div style={{
+      <div 
+        className="footer-container"
+        style={{
         maxWidth: '1200px',
         margin: '0 auto',
         padding: '0 20px'
       }}>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
-          gap: '30px',
+        <div 
+          className="footer-grid"
+          style={{
           marginBottom: '40px',
           alignItems: 'start'
         }}>
-          <div style={{
+          <div 
+            className="footer-logo-section"
+            style={{
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'flex-start',
@@ -78,7 +84,9 @@ const Footer = () => {
             </p>
           </div>
           <div>
-            <h4 style={{
+            <h4 
+              className="footer-section-title"
+              style={{
               margin: '0 0 20px 0',
               fontSize: '1.1rem',
               fontWeight: '600',
@@ -102,6 +110,7 @@ const Footer = () => {
                 <li key={index} style={{ marginBottom: '5px' }}>
                   <Link 
                     to={link.to}
+                    className="footer-link"
                     style={{
                       color: 'rgba(255, 255, 255, 0.8)',
                       textDecoration: 'none',
@@ -258,7 +267,9 @@ const Footer = () => {
               </div>
               
               <div style={{ marginTop: '20px' }}>
-                <div style={{
+                <div 
+                  className="footer-social-icons"
+                  style={{
                   display: 'flex',
                   gap: '10px',
                   alignItems: 'center',
@@ -376,7 +387,9 @@ const Footer = () => {
             <p style={{ margin: '0 0 10px 0' }}>
               © {currentYear} Ganesh Embroidery. All rights reserved.
             </p>
-            <div style={{
+            <div 
+              className="footer-bottom-links"
+              style={{
               display: 'flex',
               gap: '20px',
               justifyContent: 'center',
